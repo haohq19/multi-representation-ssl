@@ -153,6 +153,31 @@ def raw_events_to_time_surface(events: np.ndarray, time_surface_size: tuple, tau
 
 
 class DVS128Gesture(Dataset):
+    """
+    A PyTorch Dataset class for the DVS128 Gesture dataset.
+        root (str): Root directory of the dataset.
+        train (bool): If True, creates dataset from training set, otherwise from test set.
+        count (int): Number of events in each slice.
+        stride (int): Stride for slicing events.
+        patch_size (int): Size of the patches to be extracted from the raw event data.
+    Attributes:
+        root (str): Root directory of the dataset.
+        train (bool): If True, creates dataset from training set, otherwise from test set.
+        count (int): Number of events in each slice.
+        stride (int): Stride for slicing events.
+        patch_size (int): Size of the patches to be extracted from the raw event data.
+        sensor_size (tuple): Size of the sensor (128, 128).
+        data_path (str): Path to the processed data.
+        data_subdirs (list): List of subdirectories in the data path.
+        data_files (list): List of data files.
+        labels (list): List of labels corresponding to the data files.
+    Methods:
+        __len__(): Returns the number of samples in the dataset.
+        __getitem__(idx): Returns the data and label at the specified index.
+        get_sensor_size(): Returns the size of the sensor.
+        generate_data(): Generates the data by processing raw event data.
+        load_file(file_path): Loads event data from a file.
+    """
     def __init__(self, root: str, train: bool, count: int, stride: int, patch_size: int):
         self.root = root
         self.train = train
@@ -232,6 +257,12 @@ class DVS128Gesture(Dataset):
         events = np.column_stack((t, x, y, p))  # events.shape = (n_events, 4)
         return events
 
+
+
+
+
+
+
 if __name__ == "__main__":
     root = "/home/haohq/datasets/DVS128Gesture"
     dataset = DVS128Gesture(root=root, train=True, count=1000, stride=1000, patch_size=32)
@@ -241,3 +272,8 @@ if __name__ == "__main__":
     print("Label:", label)
     print("Finished.")
 
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
+    for data, label in dataloader:
+        print("Data shape:", data.shape)
+        print("Label:", label)
+        break
