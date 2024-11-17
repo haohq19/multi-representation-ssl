@@ -1,6 +1,6 @@
 import torch.nn as nn
 from timm.models.registry import register_model
-from models.encoder.rwkv_encoder import RWKVEncoder
+from models.rwkv4.rwkv_encoder import RWKVEncoder
 from models.decoder.vit_decoder import ViTDecoder
 
 class PretrainModel(nn.Module):
