@@ -5,45 +5,45 @@ import glob
 import numpy as np
 import torch
 import yaml
-from utils.data import get_tensor_data_loader
+import time
+from utils.data import get_data_loader
 from utils.dist import init_ddp, is_master
 from modeling_pretrain import PretrainModel
-from models.loss import loss_fn
+from models.loss.multi_representation_loss import MultiRepresentationLoss
 from engine_for_pretraining import train
 
-_seed_ = 2024
-random.seed(_seed_)
-torch.manual_seed(_seed_)
-torch.cuda.manual_seed_all(_seed_)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-np.random.seed(_seed_)
-    
+def init_seed(seed):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
 
 
-def get_output_dir(args):
+def get_output_dir(output_dir, model, dataset):
+    time_str = time.strftime('%Y%m%d-%H%M%S', time.localtime(time.time()))
 
-    output_dir = os.path.join(args.output_dir, f'{args.dataset}_t{args.time}_T{args.seq_len}')
-    output_dir += f'_ctx{args.ctx_len}_psz{args.patch_size}_dmd{args.d_model}_nly{args.num_layers}_dff{args.dim_feedforward}_dp{args.dropout}'
-    
-    output_dir += f'_nep{args.nepochs}_lr{args.lr}'
-   
-    if args.test:
-        output_dir += f'_test_{args.test}'
-    
-    if args.resume:
-        output_dir += '_resume'
-    
-    if args.distributed:
-        output_dir += f'_dist{args.world_size}'
+    output_dir = os.path.join(
+        output_dir,
+        f'{dataset}_{model}_{time_str}')
     
     return output_dir
 
 
 def main(config):
-    # init distributed data parallel
+    # configs
     config_dist = config['dist']
+    config_data = config['data']
     config_training = config['training']
+    config_models = config['models']
+    config_loss = config['loss']
+    config_misc = config['misc']
+    
+    # init seed
+    init_seed(config_misc['seed'])
+    
+    # init distributed data parallel
     init_ddp(config_dist)
 
     # device
@@ -53,11 +53,10 @@ def main(config):
         torch.cuda.set_device(config_training['device_id'])
 
     # data
-    config_data = config['data']
-    train_loader, val_loader = get_tensor_data_loader(config_data)
+    train_loader, val_loader, _ = get_data_loader(config_data)
 
     # output_dir
-    output_dir = get_output_dir(config)
+    output_dir = get_output_dir(config_training['output_dir'], config['models']['model']['name'], config_data['dataset'])
     if is_master():
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -66,15 +65,11 @@ def main(config):
             os.makedirs(os.path.join(output_dir, 'checkpoints'))
             print('Mkdir [{}]'.format(os.path.join(output_dir, 'checkpoints')))
 
-
-
     # model
-    config_models = config['models']
     model = PretrainModel(config_models)
     
     # loss
-    config_loss = config['loss']
-    loss_fn = loss_fn(config_loss)
+    loss_fn = MultiRepresentationLoss(config_loss)
 
     # resume
     checkpoint = None
