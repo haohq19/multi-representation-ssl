@@ -1,17 +1,17 @@
-import torch
 import torch.nn as nn
 from .temporal_embedding import SinusoidalEmbedding
 
 class EventTokenizer(nn.Module):
-    def __init__(self, patch_size, d_embed):
+    def __init__(self, config):
         super().__init__()
-        self.patch_size = patch_size
-        self.vocab_size = 2 * patch_size * patch_size
-        self.d_embed = d_embed
+        self.patch_size = config['patch_size']
+        self.d_embed = config['d_embed']
+        self.vocab_size = 2 * self.patch_size * self.patch_size
+        
 
-        self.embedding = nn.Embedding(self.vocab_size, d_embed)
-        self.ln = nn.LayerNorm(d_embed)
-        self.temporal_embedding = SinusoidalEmbedding(d_embed)
+        self.embedding = nn.Embedding(self.vocab_size, self.d_embed)
+        self.ln = nn.LayerNorm(self.d_embed)
+        self.temporal_embedding = SinusoidalEmbedding(self.d_embed)
 
     def forward(self, input):
         """

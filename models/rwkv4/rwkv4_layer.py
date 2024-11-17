@@ -160,7 +160,7 @@ class ChannelMixing(nn.Module):
         return output
     
 
-class RWKVLayer(nn.Module):
+class RWKV4Layer(nn.Module):
 
     def __init__(self, d_model, layer_id, num_layers, dim_feedforward):
         super().__init__()

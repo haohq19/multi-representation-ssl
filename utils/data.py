@@ -1,16 +1,13 @@
 import os
-import multiprocessing
 import numpy as np
 import torch
 from typing import Union
-from torch.utils.data import Dataset, DataLoader
-
-
+from torch.utils.data import Dataset, DataLoader, random_split
 
 # Data format
 # raw event: np.ndarray, shape=(n_events, 4), dtype=np.int64, columns=(timestamp, x, y, polarity)
-# event frame: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative), each pixel is the sum of positive/negative events
-
+# event frame: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative)
+# time surface: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative)
 
 def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple):
     """
@@ -258,9 +255,39 @@ class DVS128Gesture(Dataset):
         return events
 
 
+def split_dataset(dataset, train_split):
+    nsamples_total = len(dataset)
+    nsamples_train = int(nsamples_total * train_split)
+    train_dataset, val_dataset = random_split(dataset, [nsamples_train, nsamples_total - nsamples_train])
+    return train_dataset, val_dataset
 
 
 
+def get_data_loader(config):
+
+    dataset_name = config['dataset']
+    root = config['root']
+    count = config['count']
+    stride = config['stride']
+    patch_size = config['patch_size']
+
+    if dataset_name == 'dvs128gesture':
+        train_dataset = DVS128Gesture(root=root, train=True, count=count, stride=stride, patch_size=patch_size)
+        test_dataset = DVS128Gesture(root=root, train=False, count=count, stride=stride, patch_size=patch_size)
+        train_dataset, val_dataset = split_dataset(train_dataset, config['train_split'])
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+    
+    batch_size = config['batch_size']
+    shuffle = config['shuffle']
+    num_workers = config['num_workers']
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    return train_loader, val_loader, test_loader
+    
 
 
 if __name__ == "__main__":
