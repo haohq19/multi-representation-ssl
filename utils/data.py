@@ -74,6 +74,9 @@ def _raw_events_to_frame_numpy(events: np.ndarray, frame_size: tuple):
     Returns:
         np.ndarray: Event frame of size (2, width, height).
     """
+    if len(events.shape) != 2:
+        raise NotImplementedError("Batch dimension is not supported in the NumPy version.")
+    
     width, height = frame_size
     frame = np.zeros((2, width, height), dtype=np.float32)
     x, y, polarity = events[:, 1], events[:, 2], events[:, 3]
@@ -86,21 +89,30 @@ def _raw_events_to_frame_torch(events: torch.Tensor, frame_size: tuple):
     Converts raw events to a frame. Pytorch version.
 
     Args:
-        events (torch.Tensor): Raw events to be converted, shape (n_events, 4), 
+        events (torch.Tensor): Raw events to be converted, shape (n_events, 4) or (batch_size, n_events, 4),
                                where each event is [timestamp, x, y, polarity].
         frame_size (tuple): The size of the frame (width, height).
     
     Returns:
-        torch.Tensor: Event frame of size (2, width, height). The frame is stored on the same device as the input events.
+        torch.Tensor: Event frame of size (2, width, height) or (batch_size, 2, width, height).
+        The frame is stored on the same device as the input events.
     """
+    if len(events.shape) == 2:
+        events = events.unsqueeze(0)    # [n_events, 4] -> [1, n_events, 4]
 
     width, height = frame_size
     device = events.device
-    frame = torch.zeros(2 * width * height, dtype=torch.float32, device=device)
-    x, y, polarity = events[:, 1], events[:, 2], events[:, 3]
-    indices = polarity * width * height + x * height + y 
-    frame.scatter_add_(0, indices, torch.ones_like(indices, dtype=torch.float32, device=device))
-    frame = frame.reshape(2, width, height)
+    batch_size, n_events = events.shape[:2]
+
+    frame = torch.zeros(batch_size, 2 * width * height, dtype=torch.float32, device=device)
+    x = events[:, :, 1].long()
+    y = events[:, :, 2].long()
+    polarity = events[:, :, 3].long()
+    indices = polarity * width * height + x * height + y    # [batch_size, n_events] 
+    
+    values = torch.ones_like(indices, dtype=torch.float32, device=device)
+    frame.scatter_add_(dim=1, index=indices, src=values)
+    frame = frame.reshape(batch_size, 2, width, height)
     return frame
 
 
