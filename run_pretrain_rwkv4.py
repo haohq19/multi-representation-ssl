@@ -186,6 +186,7 @@ def main(config):
 
     # model
     model = PretrainModel(config_models)
+    print('Number of parameters: {} M'.format(model.num_params/1e6))
     
     # loss
     loss_fn = MultiRepresentationLoss(config_loss)
@@ -230,8 +231,8 @@ def main(config):
         val_loader=val_loader,
         nepochs=config_training['nepochs'],
         epoch=epoch,
-        input_len=config_data['count'],
-        rep_len=config_data['stride'],
+        input_len=config_data['input_len'],
+        rep_len=config_data['rep_len'],
         patch_size=config_data['patch_size'],
         pred_frame=config_loss['pred_frame'],
         pred_ts=config_loss['pred_ts'],

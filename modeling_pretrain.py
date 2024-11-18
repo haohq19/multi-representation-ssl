@@ -21,7 +21,7 @@ class PretrainModel(nn.Module):
         else:
             raise ValueError(f"Unsupported model name: {self.model_name}")
         
-        
+        self.num_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     def forward(self, input):
         # input.shape = [batch_size, n_events, 4]
