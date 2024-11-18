@@ -9,54 +9,56 @@ from utils.log import visualize_frame_in_tb
 from utils.data import raw_events_to_frame, raw_events_to_time_surface
 
 
-def preprocess_data(data: torch.Tensor, input_len: int, repr_len: int, frame_size: int, pred_frame: bool, pred_ts: bool, pred_next_frame: bool):
+def preprocess_data(data: torch.Tensor, input_len: int, repr_len: int, patch_size: int, pred_frame: bool, pred_ts: bool, pred_next_frame: bool, tau: float):
     """
     Preprocess the data for training.
     Args:
         data: torch.Tensor, shape [batch_size, n_events, 4]
         input_len: int, the length of input events
         repr_len: int, the length of representation events
-        frame_size: int, the size of frame
+        patch_size: int, the size of patch
         pred_frame: bool, whether to predict the frame
         pred_ts: bool, whether to predict the time surface
         pred_next_frame: bool, whether to predict the next frame
+        tau: float, the time constant for time surface
     Returns:
         input: torch.Tensor, shape [batch_size, input_len, 4], dtype float
         targets: torch.Tensor, shape [batch_size, n_targets, 2, frame_size, frame_size], dtype float
     """
 
     _, n_events, _ = data.size()
+    data = data.cpu()   # for debug
     input = data[:, :input_len].float()   # [batch_size, input_len, 4]
     targets = []
     if pred_frame:
-        frame = raw_events_to_frame(data[:, input_len-repr_len:input_len], frame_size)
+        frame = raw_events_to_frame(data[:, input_len-repr_len:input_len], frame_size=(patch_size, patch_size))
         targets.append(frame)   # [batch_size, 2, frame_size, frame_size]
     if pred_ts:
-        ts = raw_events_to_time_surface(data[:, input_len-repr_len:input_len], frame_size)
+        ts = raw_events_to_time_surface(data[:, input_len-repr_len:input_len], time_surface_size=(patch_size, patch_size), tau=tau)
         targets.append(ts)      # [batch_size, 2, frame_size, frame_size]
     if pred_next_frame:
         if repr_len + input_len > n_events:
             raise ValueError('Rep_len + input_len should be less than n_events')
-        next_frame = raw_events_to_frame(data[:, input_len:input_len+repr_len], frame_size)
+        next_frame = raw_events_to_frame(data[:, input_len:input_len+repr_len], frame_size=(patch_size, patch_size))
         targets.append(next_frame)  # [batch_size, 2, frame_size, frame_size]
     targets = torch.stack(targets, dim=1).float()  # [batch_size, n_targets, 2, frame_size, frame_size]
     return input, targets
     
 
-def postprocess_data(data: torch.Tensor, frame_size: int, pred_frame: bool, pred_ts: bool, pred_next_frame: bool):
+def postprocess_data(data: torch.Tensor, patch_size: int, pred_frame: bool, pred_ts: bool, pred_next_frame: bool):
     """
     Postprocess the data for visualization.
     Args:
         data: torch.Tensor, shape [batch_size, num_classes]
-        frame_size: int, the size of frame
+        patch_size: int, the size of patch
         pred_frame: bool, whether to predict the frame
         pred_ts: bool, whether to predict the time surface
         pred_next_frame: bool, whether to predict the next frame
     Returns:
         preds: torch.Tensor, shape [batch_size, n_targets, 2, frame_size, frame_size]
     """
-    n_targets = pred_frame == True + pred_ts == True + pred_next_frame == True
-    preds = data.view(-1, n_targets, 2, frame_size, frame_size)
+    n_targets = pred_frame + pred_ts + pred_next_frame
+    preds = data.view(-1, n_targets, 2, patch_size, patch_size)
     return preds
     
 
@@ -69,10 +71,11 @@ def train_one_epoch(
         tb_writer: SummaryWriter,
         input_len: int,
         rep_len: int,
-        frame_size: int,
+        patch_size: int,
         pred_frame: bool,
         pred_ts: bool,
         pred_next_frame: bool,
+        tau: float,
         dist: bool,
 ):
     model.train()
@@ -88,11 +91,11 @@ def train_one_epoch(
     for step, (data, _) in enumerate(data_loader):
         data = data.cuda(non_blocking=True)
         # preprocess data
-        input, targets = preprocess_data(data, input_len, rep_len, frame_size, pred_frame, pred_ts, pred_next_frame)
+        input, targets = preprocess_data(data, input_len, rep_len, patch_size, pred_frame, pred_ts, pred_next_frame, tau)
         # forward
         output = model(input)
         # postprocess data
-        preds = postprocess_data(output, frame_size, pred_frame, pred_ts, pred_next_frame)
+        preds = postprocess_data(output, patch_size, pred_frame, pred_ts, pred_next_frame)
         # loss
         loss = loss_fn(preds, targets)
         # backward
@@ -137,10 +140,11 @@ def validate(
     tb_writer: SummaryWriter,
     input_len: int,
     rep_len: int,
-    frame_size: int,
+    patch_size: int,
     pred_frame: bool,
     pred_ts: bool,
     pred_next_frame: bool,
+    tau: float,
     dist: bool,
 ):
     # validate
@@ -150,7 +154,7 @@ def validate(
     with torch.no_grad():
         for data, _ in data_loader:
             data = data.cuda(non_blocking=True)
-            input, targets = preprocess_data(data, input_len, rep_len, frame_size, pred_frame, pred_ts, pred_next_frame)
+            input, targets = preprocess_data(data, input_len, rep_len, patch_size, pred_frame, pred_ts, pred_next_frame, tau)
             input = data.float().cuda(non_blocking=True)
             output = model(input)
             loss = loss_fn(output, targets)
@@ -174,10 +178,11 @@ def train(
     epoch: int,
     input_len: int,
     rep_len: int,
-    frame_size: int,
+    patch_size: int,
     pred_frame: bool,
     pred_ts: bool,
     pred_next_frame: bool,
+    tau: float,
     output_dir: str,
     save_freq: int,
     dist: bool,
@@ -201,10 +206,11 @@ def train(
             tb_writer=tb_writer,
             input_len=input_len,
             rep_len=rep_len,
-            frame_size=frame_size,
+            patch_size=patch_size,
             pred_frame=pred_frame,
             pred_ts=pred_ts,
             pred_next_frame=pred_next_frame,
+            tau=tau,
             dist=dist,
         )
 
@@ -217,10 +223,11 @@ def train(
             tb_writer=tb_writer,
             input_len=input_len,
             rep_len=rep_len,
-            frame_size=frame_size,
+            patch_size=patch_size,
             pred_frame=pred_frame,
             pred_ts=pred_ts,
             pred_next_frame=pred_next_frame,
+            tau=tau,
             dist=dist,
         )
 
