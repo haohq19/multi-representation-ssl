@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+from multiprocessing import Pool
 from typing import Union, List
 from torch.utils.data import Dataset, DataLoader, random_split
 
@@ -248,6 +249,32 @@ def raw_events_to_time_surface(events: Union[np.ndarray, torch.Tensor], time_sur
         raise ValueError("Input type must be either numpy.ndarray or torch.Tensor.")
 
 
+def process_raw_events(args):
+    """
+    Processes a single event data file: loads events, applies patchification and slicing, and saves the result.
+
+    Args:
+        args (tuple): A tuple containing all necessary arguments.
+    """
+    load_fn, raw_file_path, data_subdir, patch_size, sensor_size, count, stride = args
+
+    # Load events
+    events = load_fn(raw_file_path)
+
+    # Process events
+    patches = patchify_raw_events(events, patch_size, sensor_size)
+    for idx_patch, patch in enumerate(patches):
+        slices = slice_raw_events_by_count(patch, count, stride)
+        for idx_slice, event_slice in enumerate(slices):
+            save_path = os.path.join(
+                data_subdir,
+                "{}_{}_{}.npy".format(os.path.basename(raw_file_path), idx_patch, idx_slice)
+            )
+            np.save(save_path, event_slice)
+    print("Processed: [{}]".format(raw_file_path))
+
+
+
 class DVS128Gesture(Dataset):
     """
     A PyTorch Dataset class for the DVS128 Gesture dataset.
@@ -285,7 +312,7 @@ class DVS128Gesture(Dataset):
         self.data_path = os.path.join(root, "patch{}_count{}_stride{}".format(patch_size, count, stride), "train" if train else "test")
         if not os.path.exists(self.data_path):
             os.makedirs(self.data_path)
-            print("Mkdir:", self.data_path)
+            print(f"Make dir: [{self.data_path}]")
             self.generate_data()
         
         self.data_subdirs = [os.path.join(self.data_path, dir) for dir in os.listdir(self.data_path)]
@@ -307,48 +334,63 @@ class DVS128Gesture(Dataset):
     @staticmethod
     def get_sensor_size():
         """
-        Get the size of the sensor (height, width).
+        Get the size of the sensor (width, height).
         """
         return (128, 128)
     
     def generate_data(self):
         
-        raw_data_path = os.path.join(self.root, "events_np", "train" if self.train else "test")
+        raw_data_path = os.path.join(
+            self.root,
+            "events_np",
+            "train" if self.train else "test"
+        )
         data_path = self.data_path
         
         raw_data_subdirs = []
         data_subdirs = []
         for dirname in os.listdir(raw_data_path):
-            raw_data_subdirs.append(os.path.join(raw_data_path, dirname))
+            raw_data_subdir = os.path.join(raw_data_path, dirname)
             data_subdir = os.path.join(data_path, dirname)
             if not os.path.exists(data_subdir):
                 os.makedirs(data_subdir)
-                print("Mkdir:", data_subdir)
+                print(f"Make dir: [{data_subdir}]")
+            raw_data_subdirs.append(raw_data_subdir)
             data_subdirs.append(data_subdir)
                 
-        # save the patchified data in a new dir with same structure as raw data
+        # Collect list of raw event files to process
+        raw_event_file_list = []
         for raw_data_subdir, data_subdir in zip(raw_data_subdirs, data_subdirs):
             for file in os.listdir(raw_data_subdir):
-                events = self.load_file(os.path.join(raw_data_subdir, file))
-                patches = patchify_raw_events(events, self.patch_size, self.sensor_size)
-                for idx_patch, patch in enumerate(patches):
-                    slices = slice_raw_events_by_count(patch, self.count, self.stride)
-                    for idx_slice, event_slice in enumerate(slices):
-                        np.save(os.path.join(data_subdir, "{}_{}_{}.npy".format(file, idx_patch, idx_slice)), event_slice)
-                print("Processed:", os.path.join(raw_data_subdir, file))
+                raw_file_path = os.path.join(raw_data_subdir, file)
+                args = (
+                    self.load_file,
+                    raw_file_path,
+                    data_subdir,
+                    self.patch_size,
+                    self.sensor_size,
+                    self.count,
+                    self.stride
+                )
+                raw_event_file_list.append(args)
         
+        num_workers = os.cpu_count() or 1
+        with Pool(processes=num_workers) as pool:
+            pool.map(process_raw_events, raw_event_file_list)
 
-    def load_file(self, file_path):
+        
+    @ staticmethod
+    def load_file(file_path: str) -> np.ndarray:
         """
         Loads event data from a file.
 
         Args:
-            file_path (str): Path to the file containing event data.
+            file_path (str): Path to the event data file.
 
         Returns:
             np.ndarray: A numpy array of events with shape (n_events, 4) and columns (timestamp, x, y, polarity).
         """
-        data = np.load(file_path, allow_pickle=False)  # data = {'t': t, 'x': x, 'y': y, 'p': p}
+        data = np.load(file_path, allow_pickle=False)  # data = {'t': timestamp, 'x': x, 'y': y, 'p': polarity}
         t = data['t'].astype(int)
         x = data['x'].astype(int)
         y = data['y'].astype(int)
