@@ -1,27 +1,28 @@
 import os
 import numpy as np
 import torch
-from typing import Union
+from typing import Union, List
 from torch.utils.data import Dataset, DataLoader, random_split
 
 # Data format
 # raw event: np.ndarray, shape=(n_events, 4), dtype=np.int64, columns=(timestamp, x, y, polarity)
 # event frame: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative)
 # time surface: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative)
+# sensor size / frame size / time surface size: tuple, (height, width)
 
-def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple):
+def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple)-> List[np.ndarray]:
     """
-    Divides raw event data into patches based on the specified patch size and sensor size.
+    Divides raw event data into patches based on the patch size and sensor size.
 
     Args:
         events (np.ndarray): A numpy array of events with shape (n_events, 4) and columns (timestamp, x, y, polarity).
-        patch_size (int): The size of each patch (assumed to be square).
-        sensor_size (tuple): A tuple representing the size of the event camera (width, height).
+        patch_size (int): The size of patches (square).
+        sensor_size (tuple): The size of the event camera (height, width).
     
     Returns:
         List[np.ndarray]: A list of numpy arrays, where each array contains the events in one patch.
     """
-    sensor_width, sensor_height = sensor_size
+    sensor_height, sensor_width = sensor_size
     n_patches_x = sensor_width // patch_size
     n_patches_y = sensor_height // patch_size
 
@@ -42,9 +43,9 @@ def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple)
     return patches
 
 
-def slice_raw_events_by_count(events: np.ndarray, count: int, stride: int = None):
+def slice_raw_events_by_count(events: np.ndarray, count: int, stride: int = None) -> List[np.ndarray]:
     """
-    Slice events of size (count, 4).
+    Slice events into size `count`, with optional `stride`.
     
     Args:
         events (np.ndarray): Raw events to be split.
@@ -58,74 +59,82 @@ def slice_raw_events_by_count(events: np.ndarray, count: int, stride: int = None
     if stride is None:
         stride = count
 
-    n_chunks = (len(events) - count) // stride + 1
-    chunks = [events[i * stride : i * stride + count] for i in range(n_chunks)]
-    return chunks
+    n_slices = (len(events) - count) // stride + 1
+    slices = [events[i * stride : i * stride + count] for i in range(n_slices)]
+    return slices
 
 
-def _raw_events_to_frame_numpy(events: np.ndarray, frame_size: tuple):
+def _raw_events_to_frame_numpy(events: np.ndarray, frame_size: tuple) -> np.ndarray:
     """
-    Converts raw events to a frame. NumPy version.
+    Converts raw events to an event frame (NumPy implementation).
 
     Args:
         events (np.ndarray): Raw events to be converted.
-        frame_size (tuple): The size of the frame (width, height).
+        frame_size (tuple): The size of the frame (height, width).
     
     Returns:
-        np.ndarray: Event frame of size (2, width, height).
+        np.ndarray: Event frame of size (2, height, width).
     """
     if len(events.shape) != 2:
         raise NotImplementedError("Batch dimension is not supported in the NumPy version.")
     
-    width, height = frame_size
-    frame = np.zeros((2, width, height), dtype=np.float32)
-    x, y, polarity = events[:, 1], events[:, 2], events[:, 3]
-    np.add.at(frame, (polarity, x, y), 1)
+    height, width = frame_size
+    frame = np.zeros((2, height, width), dtype=np.float32)
+
+    x = events[:, 1].astype(np.int32)
+    y = events[:, 2].astype(np.int32)
+    polarity = events[:, 3].astype(np.int32)
+
+    np.add.at(frame, (polarity, y, x), 1)
     return frame
 
 
-def _raw_events_to_frame_torch(events: torch.Tensor, frame_size: tuple):
+def _raw_events_to_frame_torch(events: torch.Tensor, frame_size: tuple) -> torch.Tensor:
     """
-    Converts raw events to a frame. Pytorch version.
+    Converts raw events to an event frame (PyTorch implementation).
 
     Args:
         events (torch.Tensor): Raw events to be converted, shape (n_events, 4) or (batch_size, n_events, 4),
                                where each event is [timestamp, x, y, polarity].
-        frame_size (tuple): The size of the frame (width, height).
+        frame_size (tuple): The size of the frame (height, width).
     
     Returns:
-        torch.Tensor: Event frame of size (2, width, height) or (batch_size, 2, width, height).
+        torch.Tensor: Event frame of size (2, height, width) or (batch_size, 2, height, width).
         The frame is stored on the same device as the input events.
     """
-    if len(events.shape) == 2:
+    if events.dim() == 2:
         events = events.unsqueeze(0)    # [n_events, 4] -> [1, n_events, 4]
 
-    width, height = frame_size
     device = events.device
     batch_size, n_events = events.shape[:2]
+    height, width = frame_size
 
-    frame = torch.zeros(batch_size, 2 * width * height, dtype=torch.float32, device=device)
+    frame = torch.zeros(batch_size, 2 * height * width, dtype=torch.float32, device=device)
     x = events[:, :, 1].long()
     y = events[:, :, 2].long()
     polarity = events[:, :, 3].long()
-    indices = polarity * width * height + x * height + y    # [batch_size, n_events] 
-    
+
+    indices = polarity * width * height + y * width + x    # [batch_size, n_events] 
     values = torch.ones_like(indices, dtype=torch.float32, device=device)
     frame.scatter_add_(dim=1, index=indices, src=values)
-    frame = frame.reshape(batch_size, 2, width, height)
+    frame = frame.reshape(batch_size, 2, height, width)
+
+    if batch_size == 1:
+        frame = frame.squeeze(0)
+
     return frame
 
 
-def raw_events_to_frame(events: Union[np.ndarray, torch.Tensor], frame_size: tuple):
+def raw_events_to_frame(events: Union[np.ndarray, torch.Tensor], frame_size: tuple) -> Union[np.ndarray, torch.Tensor]:
     """
-    Converts raw events to a frame.
+    Converts raw events to an event frame.
 
     Args:
         events (Union[np.ndarray, torch.Tensor]): Raw events to be converted.
-        frame_size (tuple): The size of the frame (width, height).
+        frame_size (tuple): The size of the frame (height, width).
     
     Returns:
-        Union[np.ndarray, torch.Tensor]: Event frame of size (2, width, height).
+        Union[np.ndarray, torch.Tensor]: Event frame of size (2, height, width).
     """
     if isinstance(events, np.ndarray):
         return _raw_events_to_frame_numpy(events, frame_size)
@@ -135,30 +144,101 @@ def raw_events_to_frame(events: Union[np.ndarray, torch.Tensor], frame_size: tup
         raise ValueError("Input type must be either numpy.ndarray or torch.Tensor.")
 
 
-def raw_events_to_time_surface(events: np.ndarray, time_surface_size: tuple, tau: float):
+def _raw_events_to_time_surface_numpy(events: np.ndarray, time_surface_size: tuple, tau: float) -> np.ndarray:
     """
-    Converts raw events to a time surface.
+    Converts raw events to a time surface (NumPy implementation).
 
     Args:
         events (np.ndarray): Raw events to be converted, shape (n_events, 4), 
                              where each event is [timestamp, x, y, polarity].
-        time_surface_size (tuple): The size of the time surface (width, height).
+        time_surface_size (tuple): The size of the time surface (height, width).
         tau (float): Time constant for the exponential decay.
 
     Returns:
-        np.ndarray: Time surface of size (2, width, height).
+        np.ndarray: Time surface of size (2, height, width).
     """
-    width, height = time_surface_size
-    time_surface = np.zeros(2 * width * height, dtype=np.float32)
-    x, y, polarity, t = events[:, 1], events[:, 2], events[:, 3], events[:, 0]
-    indices = polarity * width * height + x * height + y
+    if len(events.shape) != 2:
+        raise NotImplementedError("Batch dimension is not supported in the NumPy version.")
+
+    height, width = time_surface_size
+    time_surface = np.zeros(2 * height * width, dtype=np.float32)
+    x = events[:, 1].astype(np.int32)
+    y = events[:, 2].astype(np.int32)
+    polarity = events[:, 3].astype(np.int32)
+    t = events[:, 0].astype(np.float32)
+
+    indices = polarity * height * width + y * width + x
     time_surface[indices] = t
+
     # time_surface = np.exp((time_surface - time_surface.max()) / tau)
     t_end = t[-1]
     diff = - (t_end - time_surface)
     time_surface = np.exp(diff / tau)
-    time_surface = time_surface.reshape(2, width, height)
+    time_surface = time_surface.reshape(2, height, width)
     return time_surface
+
+
+def _raw_events_to_time_surface_torch(events: torch.Tensor, time_surface_size: tuple, tau: float) -> torch.Tensor:
+    """
+    Converts raw events to a time surface (PyTorch implementation).
+
+    Args:
+        events (torch.Tensor): Raw events to be converted, shape (n_events, 4) or (batch_size, n_events, 4),
+                               where each event is [timestamp, x, y, polarity].
+        time_surface_size (tuple): The size of the time surface (height, width).
+        tau (float): Time constant for the exponential decay.
+
+    Returns:
+        torch.Tensor: Time surface of size (2, height, width) or (batch_size, 2, height, width).
+    """
+    if events.dim() == 2:
+        events = events.unsqueeze(0)    # [n_events, 4] -> [1, n_events, 4]
+
+    device = events.device
+    batch_size, n_events = events.shape[:2]
+    height, width = time_surface_size
+
+    time_surface = torch.zeros(batch_size, 2 * height * width, dtype=torch.float32, device=device)
+    x = events[:, :, 1].long()
+    y = events[:, :, 2].long()
+    polarity = events[:, :, 3].long()
+    t = events[:, :, 0]
+
+    indices = polarity * height * width + y * width + x    # [batch_size, n_events]
+
+    # Update time_surface with the latest timestamps
+    time_surface.scatter_(dim=1, index=indices, src=t)
+
+    # Compute the exponential decay
+    t_end = t[:, -1].unsqueeze(1)  # [batch_size, 1]
+    diff = -(t_end - time_surface)  # [batch_size, 2 * height * width]
+    time_surface = torch.exp(diff / tau)
+    time_surface = time_surface.reshape(batch_size, 2, height, width)
+
+    if batch_size == 1:
+        time_surface = time_surface.squeeze(0)
+    
+    return time_surface
+
+
+def raw_events_to_time_surface(events: Union[np.ndarray, torch.Tensor], time_surface_size: tuple, tau: float) -> Union[np.ndarray, torch.Tensor]:
+    """
+    Converts raw events to a time surface.
+
+    Args:
+        events (Union[np.ndarray, torch.Tensor]): Raw events to be converted.
+        time_surface_size (tuple): The size of the time surface (height, width).
+        tau (float): Time constant for the exponential decay.
+    
+    Returns:
+        Union[np.ndarray, torch.Tensor]: Time surface of size (2, height, width).
+    """
+    if isinstance(events, np.ndarray):
+        return _raw_events_to_time_surface_numpy(events, time_surface_size, tau)
+    elif isinstance(events, torch.Tensor):
+        return _raw_events_to_time_surface_torch(events, time_surface_size, tau)
+    else:
+        raise ValueError("Input type must be either numpy.ndarray or torch.Tensor.")
 
 
 class DVS128Gesture(Dataset):
@@ -219,6 +299,9 @@ class DVS128Gesture(Dataset):
     
     @staticmethod
     def get_sensor_size():
+        """
+        Get the size of the sensor (height, width).
+        """
         return (128, 128)
     
     def generate_data(self):
@@ -228,9 +311,9 @@ class DVS128Gesture(Dataset):
         
         raw_data_subdirs = []
         data_subdirs = []
-        for dir in os.listdir(raw_data_path):
-            raw_data_subdirs.append(os.path.join(raw_data_path, dir))
-            data_subdir = os.path.join(data_path, dir)
+        for dirname in os.listdir(raw_data_path):
+            raw_data_subdirs.append(os.path.join(raw_data_path, dirname))
+            data_subdir = os.path.join(data_path, dirname)
             if not os.path.exists(data_subdir):
                 os.makedirs(data_subdir)
                 print("Mkdir:", data_subdir)
@@ -243,8 +326,8 @@ class DVS128Gesture(Dataset):
                 patches = patchify_raw_events(events, self.patch_size, self.sensor_size)
                 for idx_patch, patch in enumerate(patches):
                     slices = slice_raw_events_by_count(patch, self.count, self.stride)
-                    for idx_slice, slice in enumerate(slices):
-                        np.save(os.path.join(data_subdir, "{}_{}_{}.npy".format(file, idx_patch, idx_slice)), slice)
+                    for idx_slice, event_slice in enumerate(slices):
+                        np.save(os.path.join(data_subdir, "{}_{}_{}.npy".format(file, idx_patch, idx_slice)), event_slice)
                 print("Processed:", os.path.join(raw_data_subdir, file))
         
 
@@ -274,7 +357,6 @@ def split_dataset(dataset, train_split):
     return train_dataset, val_dataset
 
 
-
 def get_data_loader(config):
 
     dataset_name = config['dataset']
@@ -299,20 +381,3 @@ def get_data_loader(config):
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader, test_loader
-    
-
-
-if __name__ == "__main__":
-    root = "/home/haohq/datasets/DVS128Gesture"
-    dataset = DVS128Gesture(root=root, train=True, count=1000, stride=1000, patch_size=32)
-    print("Number of samples:", len(dataset))
-    data, label = dataset[0]
-    print("Data shape:", data.shape)
-    print("Label:", label)
-    print("Finished.")
-
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
-    for data, label in dataloader:
-        print("Data shape:", data.shape)
-        print("Label:", label)
-        break
