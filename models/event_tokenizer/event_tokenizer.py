@@ -20,9 +20,11 @@ class EventTokenizer(nn.Module):
         Returns:
             output: torch.Tensor, shape [batch_size, n_events, d_embed]
         """
-        timestamps = input[:, :, 0]
-        event_ids = input[:, :, 1] * self.patch_size + input[:, :, 2] + input[:, :, 3] * self.patch_size * self.patch_size
-        # event_ids = input[:, :, 1] * self.patch_size + input[:, :, 2] * 2 + input[:, :, 3]    # S7 paper implementation
+        timestamps = input[:, :, 0].float()
+        x = input[:, :, 1].long()
+        y = input[:, :, 2].long()
+        p = input[:, :, 3].long()
+        event_ids = p * self.patch_size + y * self.patch_size + x
         x = self.embedding(event_ids)
         x = self.ln(x)
         timestamps_embed = self.temporal_embedding(timestamps)

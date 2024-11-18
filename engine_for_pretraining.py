@@ -9,13 +9,13 @@ from utils.log import visualize_frame_in_tb
 from utils.data import raw_events_to_frame, raw_events_to_time_surface
 
 
-def preprocess_data(data: torch.Tensor, input_len: int, repr_len: int, patch_size: int, pred_frame: bool, pred_ts: bool, pred_next_frame: bool, tau: float):
+def preprocess_data(data: torch.Tensor, input_len: int, rep_len: int, patch_size: int, pred_frame: bool, pred_ts: bool, pred_next_frame: bool, tau: float):
     """
     Preprocess the data for training.
     Args:
         data: torch.Tensor, shape [batch_size, n_events, 4]
         input_len: int, the length of input events
-        repr_len: int, the length of representation events
+        rep_len: int, the length of representation events
         patch_size: int, the size of patch
         pred_frame: bool, whether to predict the frame
         pred_ts: bool, whether to predict the time surface
@@ -27,19 +27,18 @@ def preprocess_data(data: torch.Tensor, input_len: int, repr_len: int, patch_siz
     """
 
     _, n_events, _ = data.size()
-    data = data.cpu()   # for debug
     input = data[:, :input_len].float()   # [batch_size, input_len, 4]
     targets = []
     if pred_frame:
-        frame = raw_events_to_frame(data[:, input_len-repr_len:input_len], frame_size=(patch_size, patch_size))
+        frame = raw_events_to_frame(data[:, input_len-rep_len:input_len], frame_size=(patch_size, patch_size))
         targets.append(frame)   # [batch_size, 2, frame_size, frame_size]
     if pred_ts:
-        ts = raw_events_to_time_surface(data[:, input_len-repr_len:input_len], time_surface_size=(patch_size, patch_size), tau=tau)
+        ts = raw_events_to_time_surface(data[:, input_len-rep_len:input_len], time_surface_size=(patch_size, patch_size), tau=tau)
         targets.append(ts)      # [batch_size, 2, frame_size, frame_size]
     if pred_next_frame:
-        if repr_len + input_len > n_events:
+        if rep_len + input_len > n_events:
             raise ValueError('Rep_len + input_len should be less than n_events')
-        next_frame = raw_events_to_frame(data[:, input_len:input_len+repr_len], frame_size=(patch_size, patch_size))
+        next_frame = raw_events_to_frame(data[:, input_len:input_len+rep_len], frame_size=(patch_size, patch_size))
         targets.append(next_frame)  # [batch_size, 2, frame_size, frame_size]
     targets = torch.stack(targets, dim=1).float()  # [batch_size, n_targets, 2, frame_size, frame_size]
     return input, targets

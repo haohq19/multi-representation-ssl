@@ -14,7 +14,7 @@ class SinusoidalEmbedding(nn.Module):
         Returns:
             output: torch.Tensor, shape [batch_size, n_events, d_embed]
         """
-        batch_size, n_events = timestamps.size()
+        batch_size, n_events = timestamps.shape
         d_embed = self.d_embed
         
         # convert timestamps to difference
@@ -24,9 +24,8 @@ class SinusoidalEmbedding(nn.Module):
         # calculate the sinusoidal embedding
         position = torch.arange(0, d_embed, 2).float().to(diff.device)
         div_term = torch.exp(position * -(torch.log(torch.tensor(10000.0)) / d_embed))
-        emb = torch.zeros(1, n_events, d_embed).to(diff.device)
-        emb[0, :, 0::2] = torch.sin(diff.unsqueeze(-1) * div_term)
-        emb[0, :, 1::2] = torch.cos(diff.unsqueeze(-1) * div_term)
-        emb = emb.repeat(batch_size, 1, 1)
+        emb = torch.zeros(batch_size, n_events, d_embed).to(diff.device)
+        emb[:, :, 0::2] = torch.sin(diff.unsqueeze(-1) * div_term)
+        emb[:, :, 1::2] = torch.cos(diff.unsqueeze(-1) * div_term)
 
         return emb

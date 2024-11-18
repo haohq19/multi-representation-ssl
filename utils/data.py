@@ -105,8 +105,10 @@ def _raw_events_to_frame_torch(events: torch.Tensor, frame_size: tuple) -> torch
         torch.Tensor: Event frame of size (2, height, width) or (batch_size, 2, height, width).
         The frame is stored on the same device as the input events.
     """
+    use_batched_operate = True
     if events.dim() == 2:
         events = events.unsqueeze(0)    # [n_events, 4] -> [1, n_events, 4]
+        use_batched_operate = False
 
     device = events.device
     batch_size, n_events = events.shape[:2]
@@ -122,7 +124,7 @@ def _raw_events_to_frame_torch(events: torch.Tensor, frame_size: tuple) -> torch
     frame.scatter_add_(dim=1, index=indices, src=values)
     frame = frame.reshape(batch_size, 2, height, width)
 
-    if batch_size == 1:
+    if not use_batched_operate:
         frame = frame.squeeze(0)
 
     return frame
@@ -194,8 +196,10 @@ def _raw_events_to_time_surface_torch(events: torch.Tensor, time_surface_size: t
     Returns:
         torch.Tensor: Time surface of size (2, height, width) or (batch_size, 2, height, width).
     """
+    use_batched_operate = True
     if events.dim() == 2:
         events = events.unsqueeze(0)    # [n_events, 4] -> [1, n_events, 4]
+        use_batched_operate = False
 
     device = events.device
     batch_size, n_events = events.shape[:2]
@@ -206,12 +210,8 @@ def _raw_events_to_time_surface_torch(events: torch.Tensor, time_surface_size: t
     y = events[:, :, 2].long()
     polarity = events[:, :, 3].long()
     t = events[:, :, 0].float()
-    print(x)
-    print(y)
 
     indices = polarity * height * width + y * width + x    # [batch_size, n_events]
-
-    print(indices)
 
     # Update time_surface with the latest timestamps
     time_surface.scatter_(dim=1, index=indices, src=t)
@@ -222,7 +222,7 @@ def _raw_events_to_time_surface_torch(events: torch.Tensor, time_surface_size: t
     time_surface = torch.exp(diff / tau)
     time_surface = time_surface.reshape(batch_size, 2, height, width)
 
-    if batch_size == 1:
+    if not use_batched_operate:
         time_surface = time_surface.squeeze(0)
     
     return time_surface
