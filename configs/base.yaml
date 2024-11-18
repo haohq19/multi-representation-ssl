@@ -3,6 +3,8 @@ data:
   root: "/home/haohq/datasets/DVS128Gesture"
   count: 2048
   stride: 1024
+  input_len: 1024
+  rep_len: 128
   patch_size: 32
   train_split: 0.8
   shuffle: True
@@ -26,7 +28,7 @@ training:
     gamma: 0.1
 
 loss:
-  name: "l2"
+  loss_fn: "l2"
   pred_frame: True
   pred_ts: True
   pred_next_frame: True

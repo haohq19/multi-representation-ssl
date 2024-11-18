@@ -12,6 +12,7 @@ from modeling_pretrain import PretrainModel
 from models.loss.multi_representation_loss import MultiRepresentationLoss
 from engine_for_pretraining import train
 
+
 def init_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -109,8 +110,14 @@ def main(config):
         optimizer=optimizer,
         train_loader=train_loader,
         val_loader=val_loader,
-        n_epochs=config_training['nepochs'],
+        nepochs=config_training['nepochs'],
         epoch=epoch,
+        input_len=config_data['count'],
+        rep_len=config_data['stride'],
+        frame_size=config_data['patch_size'],
+        pred_frame=config_loss['pred_frame'],
+        pred_ts=config_loss['pred_ts'],
+        pred_next_frame=config_loss['pred_next_frame'],
         output_dir=output_dir,
         save_freq=config_training['save_freq'],
         dist=config_dist['dist'],
@@ -124,8 +131,8 @@ def load_config(config_path):
     # dynamically load model and tokenizer config
     model_name = config['models']['model']
     tokenizer_name = config['models']['tokenizer']
-    config_model_path = os.path.join(config_path.replace('config.yaml', ''), f'models/{model_name}.yaml')
-    config_tokenizer_path = os.path.join(config_path.replace('config.yaml', ''), f'models/{tokenizer_name}.yaml')
+    config_model_path = os.path.join(config_path.replace('base.yaml', ''), f'models/{model_name}.yaml')
+    config_tokenizer_path = os.path.join(config_path.replace('base.yaml', ''), f'models/{tokenizer_name}.yaml')
     with open(config_model_path, 'r') as f:
         config_model = yaml.safe_load(f)
         config['models']['model'] = config_model
@@ -143,6 +150,8 @@ def update_config_from_args(config):
     parser.add_argument('--root', type=str, help='path to dataset')
     parser.add_argument('--count', type=int, help='number of events per sample')
     parser.add_argument('--stride', type=int, help='stride of slicing')
+    parser.add_argument('--input_len', type=int, help='length of input sequence')
+    parser.add_argument('--rep_len', type=int, help='length of output sequence')
     parser.add_argument('--patch_size', type=int, help='patch size')
     parser.add_argument('--train_split', type=float, help='train split ratio')
     parser.add_argument('--shuffle', type=bool, help='shuffle dataset')
@@ -183,7 +192,7 @@ def update_config_from_args(config):
     args = parser.parse_args()
     
     # data  
-    for key in ['dataset', 'root', 'count', 'stride', 'patch_size', 'train_split', 'shuffle', 'num_workers']:
+    for key in ['dataset', 'root', 'count', 'stride', 'input_len', 'rep_len', 'patch_size', 'train_split', 'shuffle', 'num_workers']:
         if getattr(args, key) is not None:
             config['data'][key] = getattr(args, key)
             
@@ -229,7 +238,7 @@ def update_config_from_args(config):
 
 
 if __name__ == '__main__':
-    config_path = "config/base.yaml"
+    config_path = "configs/base.yaml"
     config = load_config(config_path)
     config = update_config_from_args(config)
     main(config)

@@ -166,11 +166,18 @@ def validate(
 
 def train(
     model: nn.Module,
+    loss_fn: nn.Module,
     optimizer: torch.optim.Optimizer,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    n_epochs: int,
+    nepochs: int,
     epoch: int,
+    input_len: int,
+    rep_len: int,
+    frame_size: int,
+    pred_frame: bool,
+    pred_ts: bool,
+    pred_next_frame: bool,
     output_dir: str,
     save_freq: int,
     dist: bool,
@@ -181,39 +188,39 @@ def train(
     print('Save log to {}'.format(output_dir + '/log'))
     
     epoch = epoch
-    while(epoch < n_epochs):
-        print('Epoch [{}/{}]'.format(epoch + 1, n_epochs))
+    while(epoch < nepochs):
+        print('Epoch [{}/{}]'.format(epoch + 1, nepochs))
 
         # train
         train_one_epoch(
             model=model,
-            loss_fn=nn.MSELoss(),
+            loss_fn=loss_fn,
             optimizer=optimizer,
             data_loader=train_loader,
             epoch=epoch,
             tb_writer=tb_writer,
-            input_len=100,
-            rep_len=100,
-            frame_size=64,
-            pred_frame=True,
-            pred_ts=False,
-            pred_next_frame=False,
+            input_len=input_len,
+            rep_len=rep_len,
+            frame_size=frame_size,
+            pred_frame=pred_frame,
+            pred_ts=pred_ts,
+            pred_next_frame=pred_next_frame,
             dist=dist,
         )
 
         # validate
         validate(
             model=model,
-            loss_fn=nn.MSELoss(),
+            loss_fn=loss_fn,
             data_loader=val_loader,
             epoch=epoch,
             tb_writer=tb_writer,
-            input_len=100,
-            rep_len=100,
-            frame_size=64,
-            pred_frame=True,
-            pred_ts=False,
-            pred_next_frame=False,
+            input_len=input_len,
+            rep_len=rep_len,
+            frame_size=frame_size,
+            pred_frame=pred_frame,
+            pred_ts=pred_ts,
+            pred_next_frame=pred_next_frame,
             dist=dist,
         )
 
@@ -226,7 +233,7 @@ def train(
                 'optimizer': optimizer.state_dict(),
                 'epoch': epoch,
             }
-            save_name = 'checkpoint/checkpoint_{}.pth'.format(epoch)
+            save_name = 'checkpoints/checkpoint_{}.pth'.format(epoch)
             save_on_master(checkpoint, os.path.join(output_dir, save_name))
             print('Save checkpoint to {}'.format(output_dir))
     
