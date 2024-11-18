@@ -111,11 +111,31 @@ def train_one_epoch(
             tb_writer.add_scalar(tag='step/loss', scalar_value=loss.item(), global_step=epoch * nsteps_per_epoch + step)
             if step == nsteps_per_epoch - 1:
                 # output.shape = [batch_size, n_targets, 2, frame_size, frame_size]
+                use_targets = [pred_frame, pred_ts, pred_next_frame]
+                target_indices = [-1 for _ in range(3)]
+                target_idx = 0
+                for i, use_target in enumerate(use_targets):
+                    if use_target:
+                        target_indices[i] = target_idx
+                        target_idx += 1
+
                 if pred_frame:
-                    frame_predicted = preds[:, 0]    # [batch_size, 2, frame_size, frame_size]
-                    frame_target = targets[:, 0]     # [batch_size, 2, frame_size, frame_size]
+                    target_idx = target_indices[0]
+                    frame_predicted = preds[:, target_idx]    # [batch_size, 2, frame_size, frame_size]
+                    frame_target = targets[:, target_idx]     # [batch_size, 2, frame_size, frame_size]
                     visualize_frame_in_tb(frame_predicted, epoch, tb_writer, tag='train/predicted_frame', max_out=32)
                     visualize_frame_in_tb(frame_target, epoch, tb_writer, tag='train/target_frame', max_out=32)
+                if pred_ts:
+                    target_idx = target_indices[1]
+                    ts_predicted = preds[:, target_idx]
+                    ts_target = targets[:, target_idx]
+                    # raise NotImplementedError('Visualization of time surface is not implemented yet')
+                if pred_next_frame:
+                    target_idx = target_indices[2]
+                    next_frame_predicted = preds[:, target_idx]
+                    next_frame_target = targets[:, target_idx]
+                    visualize_frame_in_tb(next_frame_predicted, epoch, tb_writer, tag='train/predicted_next_frame', max_out=32)
+                    visualize_frame_in_tb(next_frame_target, epoch, tb_writer, tag='train/target_next_frame', max_out=32)
 
             
         epoch_total_loss += loss.item() * data.size(0)
@@ -247,5 +267,5 @@ def train(
             }
             checkpoint_name = 'checkpoints/checkpoint_{}.pth'.format(epoch)
             save_on_master(checkpoint, os.path.join(output_dir, checkpoint_name))
-            print('Save checkpoint to {}'.format(output_dir))
+            print('Save checkpoint to [{}]'.format(output_dir))
     
