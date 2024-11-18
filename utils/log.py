@@ -14,6 +14,6 @@ def visualize_frame_in_tb(frame: torch.Tensor, epoch: int, tb_writer: SummaryWri
     """
     batch_size, n_channels, height, width = frame.shape
     max_outs = min(max_out, batch_size)
-    frame = frame[0, :max_outs]
+    frame = frame[:max_outs]
     for chan in range(n_channels):
         tb_writer.add_images(tag=tag + f'_{chan}', img_tensor=frame[:, chan].unsqueeze(1), global_step=epoch + 1, dataformats='NCHW')

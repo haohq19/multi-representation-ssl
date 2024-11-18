@@ -130,7 +130,6 @@ def update_config_from_args(config):
     return config
 
 
-
 def init_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
@@ -142,11 +141,9 @@ def init_seed(seed):
 
 def get_output_dir(output_dir, dataset):
     time_str = time.strftime('%Y%m%d-%H%M%S', time.localtime(time.time()))
-
     output_dir = os.path.join(
         output_dir,
         f'{time_str}_{dataset}')
-    
     return output_dir
 
 
@@ -179,10 +176,10 @@ def main(config):
     if is_master():
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-            print('Mkdir [{}]'.format(output_dir))
+            print('Make dir [{}]'.format(output_dir))
         if not os.path.exists(os.path.join(output_dir, 'checkpoints')):
             os.makedirs(os.path.join(output_dir, 'checkpoints'))
-            print('Mkdir [{}]'.format(os.path.join(output_dir, 'checkpoints')))
+            print('Make dir [{}]'.format(os.path.join(output_dir, 'checkpoints')))
 
     # model
     model = PretrainModel(config_models)
@@ -204,7 +201,7 @@ def main(config):
 
     model.cuda()
     if config_dist['dist']:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=config_dist['local_rank'])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[config_dist['local_rank']])
    
     # run
     epoch = 0
@@ -251,7 +248,8 @@ if __name__ == '__main__':
     main(config)
     
 
+
 ''''
-python pretrain_dae.py
-torchrun --nproc_per_node=4 pretrain_dae.py
+python run_pretrain_rwkv4.py    
+torchrun --nproc_per_node=4 run_pretrain_rwkv4.py
 '''

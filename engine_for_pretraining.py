@@ -114,8 +114,8 @@ def train_one_epoch(
                 if pred_frame:
                     frame_predicted = preds[:, 0]    # [batch_size, 2, frame_size, frame_size]
                     frame_target = targets[:, 0]     # [batch_size, 2, frame_size, frame_size]
-                    visualize_frame_in_tb(frame_predicted, epoch, tb_writer, tag='train/predicted_frame', max_out=4)
-                    visualize_frame_in_tb(frame_target, epoch, tb_writer, tag='train/target_frame', max_out=4)
+                    visualize_frame_in_tb(frame_predicted, epoch, tb_writer, tag='train/predicted_frame', max_out=32)
+                    visualize_frame_in_tb(frame_target, epoch, tb_writer, tag='train/target_frame', max_out=32)
 
             
         epoch_total_loss += loss.item() * data.size(0)
@@ -153,16 +153,21 @@ def validate(
     with torch.no_grad():
         for data, _ in data_loader:
             data = data.cuda(non_blocking=True)
+            # preprocess data
             input, targets = preprocess_data(data, input_len, rep_len, patch_size, pred_frame, pred_ts, pred_next_frame, tau)
-            input = data.float().cuda(non_blocking=True)
+            # forward
             output = model(input)
-            loss = loss_fn(output, targets)
+            # postprocess data
+            preds = postprocess_data(output, patch_size, pred_frame, pred_ts, pred_next_frame)
+            # loss
+            loss = loss_fn(preds, targets)
             epoch_total_loss += loss.item() * data.size(0)
     if dist:
         epoch_total_loss = global_meters_sum(epoch_total_loss)
     if is_master():
-        tb_writer.add_scalar('valid/loss', epoch_total_loss / nsamples_per_epoch, epoch + 1)
-    print('Validation average loss: {:.5e}'.format(epoch_total_loss / nsamples_per_epoch))
+        tb_writer.add_scalar('val/loss', epoch_total_loss / nsamples_per_epoch, epoch + 1)
+        
+    print('Validate average loss: {:.5e}'.format(epoch_total_loss / nsamples_per_epoch))
     
 
 
@@ -187,9 +192,10 @@ def train(
     dist: bool,
 ):  
     # log
+    tb_writer = None
     if is_master():
         tb_writer = SummaryWriter(output_dir + '/log')
-    print('Save log to {}'.format(output_dir + '/log'))
+        print('Save tensorboard logs to [{}]'.format(output_dir + '/log'))
     
     epoch = epoch
     while(epoch < nepochs):
@@ -232,14 +238,14 @@ def train(
 
         epoch += 1
 
-        # save
+        # save checkpoint
         if epoch % save_freq == 0:
             checkpoint = {
                 'model': model.module.state_dict() if dist else model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'epoch': epoch,
             }
-            save_name = 'checkpoints/checkpoint_{}.pth'.format(epoch)
-            save_on_master(checkpoint, os.path.join(output_dir, save_name))
+            checkpoint_name = 'checkpoints/checkpoint_{}.pth'.format(epoch)
+            save_on_master(checkpoint, os.path.join(output_dir, checkpoint_name))
             print('Save checkpoint to {}'.format(output_dir))
     

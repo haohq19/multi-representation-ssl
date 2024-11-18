@@ -16,7 +16,7 @@ def save_on_master(*args, **kwargs):
         
 def init_ddp(config):
     """
-    Initialize Distributed Data Parallel (DDP) mode
+    Initialize Distributed Data Parallel (DDP)
     """
     
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:     # distributed mode
@@ -28,11 +28,11 @@ def init_ddp(config):
         config['dist'] = False  
         return
 
-    print('init distributed data parallel (rank {}): {}'.format(config['rank'], config['dist_url']), flush=True)
+    print('Init DDP rank {}'.format(config['rank']), flush=True)
     dist.init_process_group(
-        backend=config['backend'], 
-        init_method=config['dist_url'], 
-        world_size=config['world_size'], 
+        backend=config['backend'],
+        init_method=config['dist_url'],
+        world_size=config['world_size'],
         rank=config['rank'])
     enable_print(is_master())
     
