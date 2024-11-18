@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import yaml
 import time
+from pprint import pprint
 from utils.data import get_data_loader
 from utils.dist import init_ddp, is_master
 from modeling_pretrain import PretrainModel
@@ -72,6 +73,7 @@ def update_config_from_args(config):
     parser.add_argument('--pred_frame', type=bool, help='predict frame')
     parser.add_argument('--pred_ts', type=bool, help='predict timestamp')
     parser.add_argument('--pred_next_frame', type=bool, help='predict next frame')
+    parser.add_argument('--tau', type=float, help='tau')
 
     # dist
     parser.add_argument('--dist-url', default='env://', help='url used to set up distributed training')
@@ -98,7 +100,7 @@ def update_config_from_args(config):
             config['training'][key] = getattr(args, key)
             
     # loss
-    for key in ['loss_fn', 'pred_frame', 'pred_ts', 'pred_next_frame']:
+    for key in ['loss_fn', 'pred_frame', 'pred_ts', 'pred_next_frame', 'tau']:
         if getattr(args, key) is not None:
             config['loss'][key] = getattr(args, key)
             
@@ -138,12 +140,12 @@ def init_seed(seed):
     np.random.seed(seed)
 
 
-def get_output_dir(output_dir, model, dataset):
+def get_output_dir(output_dir, dataset):
     time_str = time.strftime('%Y%m%d-%H%M%S', time.localtime(time.time()))
 
     output_dir = os.path.join(
         output_dir,
-        f'{dataset}_{model}_{time_str}')
+        f'{time_str}_{dataset}')
     
     return output_dir
 
@@ -173,7 +175,7 @@ def main(config):
     train_loader, val_loader, _ = get_data_loader(config_data)
 
     # output_dir
-    output_dir = get_output_dir(config_training['output_dir'], config['models']['model']['name'], config_data['dataset'])
+    output_dir = get_output_dir(config_training['output_dir'], config_data['dataset'])
     if is_master():
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -217,7 +219,7 @@ def main(config):
     if is_master():
         with open(os.path.join(output_dir, 'config.yaml'), 'w') as f:
             yaml.dump(config, f)
-        print(config)
+        pprint(config)
 
     # train
     train(
@@ -230,10 +232,11 @@ def main(config):
         epoch=epoch,
         input_len=config_data['count'],
         rep_len=config_data['stride'],
-        frame_size=config_data['patch_size'],
+        patch_size=config_data['patch_size'],
         pred_frame=config_loss['pred_frame'],
         pred_ts=config_loss['pred_ts'],
         pred_next_frame=config_loss['pred_next_frame'],
+        tau=config_loss['tau'],
         output_dir=output_dir,
         save_freq=config_training['save_freq'],
         dist=config_dist['dist'],
@@ -241,7 +244,7 @@ def main(config):
 
 
 if __name__ == '__main__':
-    config_path = "configs/base.yaml"
+    config_path = "configs"
     config = load_config(config_path)
     config = update_config_from_args(config)
     main(config)
