@@ -31,14 +31,17 @@ def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple)
         (events[:, 2] >= 0) & (events[:, 2] < sensor_height)
     ]
 
-    patch_x = valid_events[:, 1] // patch_size
-    patch_y = valid_events[:, 2] // patch_size
-    patch_idx = patch_y * n_patches_x + patch_x
+    patch_indices_x = valid_events[:, 1] // patch_size
+    patch_indices_y = valid_events[:, 2] // patch_size
+    patch_indices = patch_indices_y * n_patches_x + patch_indices_x
+
+    valid_events[:, 1] = valid_events[:, 1] % patch_size
+    valid_events[:, 2] = valid_events[:, 2] % patch_size
 
     patches = [[] for _ in range(n_patches_x * n_patches_y)]
 
-    for idx in np.unique(patch_idx):
-        patches[idx] = valid_events[patch_idx == idx]
+    for idx in np.unique(patch_indices):
+        patches[idx] = valid_events[patch_indices == idx]
     
     return patches
 
@@ -202,9 +205,13 @@ def _raw_events_to_time_surface_torch(events: torch.Tensor, time_surface_size: t
     x = events[:, :, 1].long()
     y = events[:, :, 2].long()
     polarity = events[:, :, 3].long()
-    t = events[:, :, 0]
+    t = events[:, :, 0].float()
+    print(x)
+    print(y)
 
     indices = polarity * height * width + y * width + x    # [batch_size, n_events]
+
+    print(indices)
 
     # Update time_surface with the latest timestamps
     time_surface.scatter_(dim=1, index=indices, src=t)
