@@ -1,26 +1,26 @@
 data:
   dataset: "dvs128gesture"
   root: "/home/haohq/datasets/DVS128Gesture"
-  count: 2048
-  stride: 1024
-  input_len: 1024
-  rep_len: 128
-  patch_size: 32
+  count: 4096
+  stride: 4096
+  input_len: 2048
+  rep_len: 256
+  patch_size: 16
   train_split: 0.8
   shuffle: True
-  num_workers: 1
+  num_workers: 16
 
 models:
   tokenizer: "event_tokenizer"
   model: "rwkv4"
 
 training:
-  batch_size: 32
+  batch_size: 128
   device_id: 0
   nepochs: 20
-  lr: 0.01
+  lr: 0.001
   output_dir: "outputs/pretrain_rwkv4"
-  save_freq: 10
+  save_freq: 1
   resume: False
   optimizer: "adam"
 

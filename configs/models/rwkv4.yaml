@@ -1,5 +1,5 @@
 name: "rwkv4"
 d_model: 64
-depth: 4
+depth: 2
 d_ffn: 256
-num_classes: 6144
+num_classes: 0
