@@ -47,24 +47,32 @@ def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple)
     return patches
 
 
-def slice_raw_events_by_count(events: np.ndarray, count: int, stride: int = None) -> List[np.ndarray]:
+def slice_raw_events_by_count(events: np.ndarray, count: int, stride: int, inverse: bool = False) -> List[np.ndarray]:
     """
     Slice events into size `count`, with optional `stride`.
     
     Args:
         events (np.ndarray): Raw events to be split.
         count (int): The number of events in each slice.
-        stride (int): The stride between slices. If None, stride is set to count.
-    
+        stride (int): The stride between slices. If 'stride' is 0, only return the first slice.
+        inverse (bool): If True, the slices are taken from the end of the events.
+
     Returns:
         List[np.ndarray]: List of event slices.
     """
+    nevents = len(events)
 
-    if stride is None:
-        stride = count
+    n_slices = 1
+    if (stride == 0) and (nevents < count):
+            return []
+        
+    if stride > 0:
+        n_slices = (len(events) - count) // stride + 1
 
-    n_slices = (len(events) - count) // stride + 1
-    slices = [events[i * stride : i * stride + count] for i in range(n_slices)]
+    if not inverse:
+        slices = [events[i * stride : i * stride + count] for i in range(n_slices)]
+    else:
+        slices = [events[nevents - i * stride - count: nevents - i * stride] for i in range(n_slices)]
     return slices
 
 
@@ -256,7 +264,7 @@ def process_raw_events(args):
     Args:
         args (tuple): A tuple containing all necessary arguments.
     """
-    load_fn, raw_file_path, data_subdir, patch_size, sensor_size, count, stride = args
+    load_fn, raw_file_path, data_subdir, patch_size, sensor_size, count, stride, inverse = args
 
     # Load events
     events = load_fn(raw_file_path)
@@ -264,7 +272,7 @@ def process_raw_events(args):
     # Process events
     patches = patchify_raw_events(events, patch_size, sensor_size)
     for idx_patch, patch in enumerate(patches):
-        slices = slice_raw_events_by_count(patch, count, stride)
+        slices = slice_raw_events_by_count(patch, count, stride, inverse)
         for idx_slice, event_slice in enumerate(slices):
             save_path = os.path.join(
                 data_subdir,
@@ -283,33 +291,45 @@ class DVS128Gesture(Dataset):
         count (int): Number of events in each slice.
         stride (int): Stride for slicing events.
         patch_size (int): Size of the patches to be extracted from the raw event data.
+        inverse (bool): If True, the slices are taken from the end of the events. Default: False.
     Attributes:
         root (str): Root directory of the dataset.
         train (bool): If True, creates dataset from training set, otherwise from test set.
         count (int): Number of events in each slice.
         stride (int): Stride for slicing events.
+        inverse (bool): If True, the slices are taken from the end of the events.
         patch_size (int): Size of the patches to be extracted from the raw event data.
         sensor_size (tuple): Size of the sensor (128, 128).
         data_path (str): Path to the processed data.
+        relative_data_path (str): Relative path to the processed data from the root directory.
         data_subdirs (list): List of subdirectories in the data path.
         data_files (list): List of data files.
         labels (list): List of labels corresponding to the data files.
+        data_ids (list): List of data IDs. Use data ID to retrieve the original data file and label.
     Methods:
         __len__(): Returns the number of samples in the dataset.
-        __getitem__(idx): Returns the data and label at the specified index.
+        __getitem__(idx): Returns the data and its ID. 
         get_sensor_size(): Returns the size of the sensor.
         generate_data(): Generates the data by processing raw event data.
         load_file(file_path): Loads event data from a file.
     """
-    def __init__(self, root: str, train: bool, count: int, stride: int, patch_size: int):
+    def __init__(self, root: str, train: bool, count: int, stride: int, patch_size: int, inverse: bool = False):
         self.root = root
         self.train = train
         self.count = count
         self.stride = stride
+        self.inverse = inverse
         self.patch_size = patch_size
         self.sensor_size = self.get_sensor_size()
 
-        self.data_path = os.path.join(root, "patch{}_count{}_stride{}".format(patch_size, count, stride), "train" if train else "test")
+        self.data_path = os.path.join(
+            root,
+            "patch{}_count{}_stride{}".format(patch_size, count, stride) + "_inverse" if inverse else "",
+            "train" if train else "test"
+        )
+
+        self.relative_data_path = os.path.relpath(self.data_path, root)
+
         if not os.path.exists(self.data_path):
             os.makedirs(self.data_path)
             print(f"Make dir: [{self.data_path}]")
@@ -318,18 +338,22 @@ class DVS128Gesture(Dataset):
         self.data_subdirs = [os.path.join(self.data_path, dir) for dir in os.listdir(self.data_path)]
         self.data_files = []
         self.labels = []
+        self.data_ids = []
+        data_id = 0
         for idx, data_subdir in enumerate(self.data_subdirs):
             for file in os.listdir(data_subdir):
                 self.data_files.append(os.path.join(data_subdir, file))
                 self.labels.append(idx)
+                self.data_ids.append(data_id)
+                data_id += 1
     
     def __len__(self):
         return len(self.data_files)
     
     def __getitem__(self, idx):
         data = np.load(self.data_files[idx], allow_pickle=False)
-        label = self.labels[idx]
-        return data, label
+        data_id = self.data_ids[idx]
+        return data, data_id
     
     @staticmethod
     def get_sensor_size():
@@ -370,9 +394,11 @@ class DVS128Gesture(Dataset):
                     self.patch_size,
                     self.sensor_size,
                     self.count,
-                    self.stride
+                    self.stride,
+                    self.inverse,
                 )
                 raw_event_file_list.append(args)
+                # process_raw_events(args)
         
         num_workers = os.cpu_count() or 1
         with Pool(processes=num_workers) as pool:
@@ -430,3 +456,16 @@ def get_data_loader(config):
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader, test_loader
+
+
+if __name__ == '__main__':
+    dataset = DVS128Gesture(root='/home/haohq/datasets/DVS128Gesture', train=True, count=2048, stride=0, patch_size=32, inverse=True)
+    loader = DataLoader(dataset, batch_size=1, shuffle=False, pin_memory=True)
+    for data, data_id in loader:
+        for sample in data:
+            if sample.shape != (2048, 4):
+                print(sample.shape)
+                print(data_id)
+                print(sample)
+            
+# /home/haohq/datasets/DVS128Gesture/patch32_count2048_stride0_inverse/train/1/user23_fluorescent_led_0.npz_13_0.npy

@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from .rwkv4_layer import RWKV4Layer
 
@@ -20,9 +21,20 @@ class RWKV4(nn.Module):
         # head
         self.head = nn.Linear(self.d_model, self.num_classes, bias=False)
 
-    def forward(self, input):
+    def forward(self, input, return_hidden=False):
         # input.shape = [batch_size, ctx_len, d_model]
         # output.shape = [batch_size, num_classes]
+
+        if return_hidden:
+            hidden = []
+            x = input
+            for layer in self.layers:
+                x, h = layer(x, return_hidden=True)
+                hidden.append(h)
+            x = x[:, -1, :]         # [batch_size, d_model]
+            output = self.head(x)
+            hidden = torch.cat(hidden, dim=1)  # [batch_size, depth * d_model]
+            return output, hidden
 
         x = input
         # backbone

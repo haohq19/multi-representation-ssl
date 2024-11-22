@@ -94,7 +94,7 @@ class TokenMixing(nn.Module):
         self.to_output.scale_init = 0
 
 
-    def forward(self, x):
+    def forward(self, x, return_hidden=False):
         # x.shape = [batch_size, num_tokens, num_channels]
 
         B, T, C = x.size()
@@ -113,7 +113,10 @@ class TokenMixing(nn.Module):
         wkv = self.wkv(B, T, C, self.w, self.u, k, v)
 
         rwkv = torch.sigmoid(r) * wkv
-        output = self.to_output(rwkv)   
+        output = self.to_output(rwkv)
+
+        if return_hidden:
+            return output, wkv[:, -1, :].clone()  # output.shape = [batch_size, num_tokens, num_channels], wkv.shape = [batch_size, num_channels]
         
         # output.shape = [batch_size, num_tokens, num_channels]
         return output  
@@ -175,9 +178,16 @@ class RWKV4Layer(nn.Module):
         self.token_mixing = TokenMixing(d_model=d_model, layer_id=layer_id, num_layers=num_layers)
         self.channel_mixing = ChannelMixing(d_model=d_model, layer_id=layer_id, num_layers=num_layers, dim_feedforward=dim_feedforward)
 
-    def forward(self, x):
+    def forward(self, x, return_hidden=False):
         # x.shape = [batch_size, num_tokens, num_channels]
 
+        if return_hidden:
+            output, wkv = self.token_mixing(self.ln0(x), return_hidden=True)
+            x = x + output
+            output = self.channel_mixing(self.ln1(x))
+            x = x + output
+            return x, wkv   # x.shape = [batch_size, num_tokens, num_channels], wkv.shape = [batch_size, num_channels]
+        
         output = self.token_mixing(self.ln0(x))
         x = x + output
         output = self.channel_mixing(self.ln1(x))

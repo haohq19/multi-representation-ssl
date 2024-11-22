@@ -23,11 +23,15 @@ class PretrainModel(nn.Module):
         
         self.num_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-    def forward(self, input):
+    def forward(self, input, return_hidden=False):
         # input.shape = [batch_size, n_events, 4]
         # output.shape = [batch_size, num_classes]
 
         x = self.tokenizer(input)   # [batch_size, n_events, d_model]
-        output = self.model(x)      # [batch_size, num_classes]
 
+        if return_hidden:
+            output, hidden = self.model(x, return_hidden=True)
+            return output, hidden   # output.shape = [batch_size, num_classes], hidden.shape = [batch_size, depth * d_model]
+        
+        output = self.model(x)      # [batch_size, num_classes]
         return output
