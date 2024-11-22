@@ -14,21 +14,26 @@ def save_on_master(*args, **kwargs):
     if is_master():
         torch.save(*args, **kwargs)
         
-def init_ddp(args):
-    '''
-    Init distributed data parallel
-    '''
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:  # distributed mode
-        args.rank = int(os.environ["RANK"])
-        args.world_size = int(os.environ['WORLD_SIZE'])
-        args.local_rank = int(os.environ['LOCAL_RANK'])
-        args.distributed = True
-    else:  # not distributed mode
-        args.distributed = False
+def init_ddp(config):
+    """
+    Initialize Distributed Data Parallel (DDP)
+    """
+    
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:     # distributed mode
+        config['rank'] = int(os.environ["RANK"])
+        config['world_size'] = int(os.environ['WORLD_SIZE'])
+        config['local_rank'] = int(os.environ['LOCAL_RANK'])
+        config['dist'] = True
+    else:                                                       # non-distributed mode                             
+        config['dist'] = False  
         return
 
-    print('init distributed data parallel (rank {}): {}'.format(args.rank, args.dist_url), flush=True)
-    dist.init_process_group(backend=args.backend, init_method=args.dist_url, world_size=args.world_size, rank=args.rank)
+    print('Init DDP rank {}'.format(config['rank']), flush=True)
+    dist.init_process_group(
+        backend=config['backend'],
+        init_method=config['dist_url'],
+        world_size=config['world_size'],
+        rank=config['rank'])
     enable_print(is_master())
     
     

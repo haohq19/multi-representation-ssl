@@ -1,0 +1,5 @@
+name: "rwkv4"
+d_model: 256
+depth: 4
+d_ffn: 1024
+num_classes: 0
