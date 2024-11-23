@@ -530,7 +530,38 @@ class HiddenStateDataset(Dataset):
         return data, label
 
 
-def get_hidden_state_loader(config):
+def get_data_loader_list_for_caching_hidden_states(
+    dataset_name: str,
+    root: str,
+    patch_size: int,
+    count: int,
+    batch_size: int,
+    num_workers: int,
+) -> list:
+    datasets = []
+    if dataset_name == 'dvs128gesture':
+        datasets.append(
+            DVS128Gesture(root, train=True, count=count, stride=0, patch_size=patch_size, inverse=True)
+        )
+        datasets.append(
+            DVS128Gesture(root, train=False, count=count, stride=0, patch_size=patch_size, inverse=True)
+        )
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+    
+    data_loaders = []
+    for dataset in datasets:
+        data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        data_loaders.append(data_loader)
+    return data_loaders
+    
+
+def get_hidden_state_loader_list(
+    dataset_name: str,
+    root: str,
+    batch_size: int,
+    num_workers: int,
+):
     root = config['root']
     batch_size = config['batch_size']
     shuffle = config['shuffle']

@@ -187,91 +187,36 @@ def validate(
 
 
 def train(
-    pretrain_model: nn.Module,
-    data_loader: DataLoader,
-    input_len: int,
-    patch_size: int,
-    d_hidden: int,
-    output_dir: str,
-    transfer_model: nn.Module,
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: nn.Module,
     nepochs: int,
-    batch_size: int,
-    shuffle: bool,
+    output_dir: str,
 ):  
-    # get dataset
-    dataset = data_loader.dataset
-    relpath = os.path.relpath(data_loader.dataset.data_path, data_loader.dataset.root)
 
-    # hidden dir
-    # output_dir/hidden can be seen as root dir of dataset
-    hidden_dir = os.path.join(output_dir, 'hidden', relpath)
-    if not os.path.exists(hidden_dir):
-        os.makedirs(hidden_dir)
-        print('Make dir [{}]'.format(hidden_dir))
-        cache_hidden_states(
-            model=pretrain_model,
-            data_loader=data_loader,
-            input_len=input_len,
-            hidden_dir=hidden_dir,
-        )
-
-    # unpatchify hidden states
-    sensor_size = dataset.get_sensor_size()
-    unpatched_hidden_dir = os.path.join(output_dir, 'unpatched_hidden', relpath)
-    if not os.path.exists(unpatched_hidden_dir):
-        os.makedirs(unpatched_hidden_dir)
-        print('Make dir [{}]'.format(unpatched_hidden_dir))
-        unpatchify_hidden_states(
-            patch_size=patch_size,
-            hidden_dir=hidden_dir,
-            unpatched_hidden_dir=unpatched_hidden_dir,
-            sensor_size=sensor_size,
-            d_hidden=d_hidden,
-        )
-
-    hidden_state_dataset = HiddenStateDataset(root=unpatched_hidden_dir)
-    train_dataset, val_dataset = random_split(hidden_state_dataset, [int(0.8 * len(hidden_state_dataset)), len(hidden_state_dataset) - int(0.8 * len(hidden_state_dataset))])
-
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=4,
-        pin_memory=True,
-    )
-
-    val_loader = DataLoader(
-        dataset=val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-    )
-
-
-    # transfer
+    # train
     epoch = 0
     while(epoch < nepochs):
         print('Epoch [{}/{}]'.format(epoch + 1, nepochs))
-
         train_one_epoch(
-            model=transfer_model,
+            model=model,
             loss_fn=loss_fn,
             optimizer=optimizer,
             data_loader=train_loader,
         )
         validate(
-            model=transfer_model,
+            model=model,
             data_loader=val_loader,
         )
+        
         epoch += 1
 
-    
-
     # save model
-    torch.save(transfer_model.state_dict(), os.path.join(output_dir, "checkpoints", 'transfer_model.pth'))
+    torch.save(model.state_dict(), os.path.join(output_dir, "checkpoints", 'ckpt_{}.pth'.format(epoch)))
+    print('Save model to [{}]'.format(os.path.join(output_dir, "checkpoints", 'ckpt_{}.pth'.format(epoch))))
+    
 
 
 

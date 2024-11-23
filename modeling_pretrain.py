@@ -32,12 +32,18 @@ class PretrainModel(nn.Module):
             ntargets = use_frame_target + use_next_frame_target + use_ts_target
             num_classes = ntargets * 2 * patch_size * patch_size
             cfg_enc['num_classes'] = num_classes
+
             self.encoder = RWKV4(
                 d_model=d_model,
                 depth=depth,
                 d_ffn=d_ffn,
                 num_classes=num_classes,
             )
+            
+            # add hidden size to cfg
+            d_hidden = d_model * depth
+            cfg['d_hidden'] = d_hidden
+            
         else:
             raise ValueError(f"Unsupported encoder name: {self.encoder_name}")
         

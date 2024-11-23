@@ -11,7 +11,7 @@ shuffle: True
 num_workers: 16
 
 # models
-encoder: "rwkv5"
+encoder: "rwkv4"
 tokenizer: "event_tokenizer"
 
 # training

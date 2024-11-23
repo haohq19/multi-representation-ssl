@@ -3,16 +3,19 @@ import torch.nn as nn
 from .vit_layers import Block, get_sinusoid_encoding_table 
 
 class ViTDecoder(nn.Module):
-    def __init__(self, config):
+    def __init__(
+        self,
+        in_chans: int,
+        n_patches: int,
+        d_model: int,
+        depth: int,
+        nheads: int,
+        num_classes: int,
+        drop_rate: float,
+        attn_drop_rate: float,
+    ):
         super().__init__()
-        in_chans = config['in_chans']
-        n_patches = config['n_patches']
-        d_model = config['d_model']
-        depth = config['depth']
-        nheads = config['nheads']
-        num_classes = config['num_classes']
-        drop_rate = config['drop_rate']
-        attn_drop_rate = config['attn_drop_rate']
+
 
         self.in_chans = in_chans
         self.n_patches = n_patches
