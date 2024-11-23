@@ -1,39 +1,29 @@
-data:
-  dataset: "dvs128gesture"
-  root: "/home/haohq/datasets/DVS128Gesture"
-  count: 4096
-  stride: 4096
-  input_len: 2048
-  rep_len: 256
-  patch_size: 32
-  train_split: 0.8
-  shuffle: True
-  num_workers: 16
-
-models:
-  tokenizer: "event_tokenizer"
-  model: "rwkv4"
-
-training:
-  batch_size: 128
-  device_id: 0
-  nepochs: 100
-  lr: 0.001
-  output_dir: "outputs/pretrain_rwkv4"
-  save_freq: 1
-  resume: False
-  optimizer: "adam"
-
-loss:
-  loss_fn: "l2"
-  pred_frame: True
-  pred_ts: False
-  pred_next_frame: True
-  tau: 0.1
-
-dist:
-  dist_url: "env://"
-  backend: "gloo"
-
-misc:
-  seed: 2024
+dataset: "dvs128gesture"
+root: "datasets/DVS128Gesture"
+patch_size: 32
+count: 4096
+stride: 4096
+inverse: False
+train_split: 0.8
+shuffle: True
+num_workers: 16
+tokenizer: "event_tokenizer"
+model: "rwkv4"
+batch_size: 128
+device_id: 0
+nepochs: 100
+lr: 0.001
+output_dir: "outputs/pretrain_rwkv4"
+save_freq: 1
+resume: False
+optimizer: "adam"
+loss_fn: "l2"
+pred_frame: True
+pred_ts: False
+pred_next_frame: True
+tau: 0.1
+input_len: 2048
+rep_len: 256
+dist_url: "env://"
+backend: "gloo"
+seed: 2024

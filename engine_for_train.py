@@ -4,62 +4,54 @@ import tqdm
 import torch
 import torch.nn as nn
 from collections import defaultdict
-from torch.utils.data import DataLoader, Dataset, random_split
-
-
-class HiddenStateDataset(Dataset):
-    def __init__(self, root):
-        self.root = root
-        self.data_subdirs = [os.path.join(self.root, dir) for dir in os.listdir(self.root)]
-        self.data_files = []
-        self.labels = []
-        for idx, data_subdir in enumerate(self.data_subdirs):
-            for file in os.listdir(data_subdir):
-                self.data_files.append(os.path.join(data_subdir, file))
-                self.labels.append(idx)
-    
-    def __len__(self):
-        return len(self.data_files)
-    
-    def __getitem__(self, idx):
-        data = np.load(self.data_files[idx], allow_pickle=False)
-        label = self.labels[idx]
-        return data, label
-
-
+from utils.data import HiddenStateDataset
+from torch.utils.data import DataLoader, random_split
 
 def cache_hidden_states(
         model: nn.Module,
         data_loader: DataLoader,
         input_len: int,
         hidden_dir: str,
-):
+):        
+    """
+    Caches the hidden states of a model for a given dataset.
+    Args:
+        model (nn.Module): The neural network model to use for generating hidden states.
+        data_loader (DataLoader): DataLoader providing the dataset to process.
+        input_len (int): The length of the input sequence.
+        hidden_dir (str): The directory to save hidden states.
+    Returns:
+        None
+    """
     model.eval()
-    nsteps_per_epoch = len(data_loader)
+    nsteps = len(data_loader)
 
     # progress bar
-    process_bar = tqdm.tqdm(total=nsteps_per_epoch)
+    process_bar = tqdm.tqdm(total=nsteps)
 
-    # train one step
     with torch.no_grad():
-        for _, (data, data_ids) in enumerate(data_loader):
+        for data, indices in data_loader:
             data = data.cuda(non_blocking=True)
             # preprocess data
             input = data[:, :input_len].float()
             # forward
             _, hidden = model(input, return_hidden=True)
-
-            # get data file name and save hidden states
-            data_ids = data_ids.cpu().numpy()
-            hidden = hidden.cpu().detach().numpy() 
-            data_files = [data_loader.dataset.data_files[data_id] for data_id in data_ids]  # absolute path
-            relative_data_files = [os.path.relpath(data_file, data_loader.dataset.data_path) for data_file in data_files]   # absolute path -> relative path
-            for i, relative_data_file in enumerate(relative_data_files):
-                hidden_file = os.path.join(hidden_dir, relative_data_file)
-                if not os.path.exists(os.path.dirname(hidden_file)):
-                    os.makedirs(os.path.dirname(hidden_file))
-                    print('Make dir [{}]'.format(os.path.dirname(hidden_file)))
-                np.save(hidden_file, hidden[i])
+            # get the path to the data files in the batch 
+            indices = indices.cpu().numpy().long()
+            batch_file_pathes = [data_loader.dataset.data_file_pathes[idx] for idx in indices]  # absolute path of data files in the batch
+            # absolute path -> relative path 
+            # data_path is the data directory containing all subdirs of data files
+            # one subdir contains data files of one label
+            # relpath havs the format of 'subdirname/filename'
+            batch_file_relpathes = [os.path.relpath(file_path, data_loader.dataset.data_path) for file_path in batch_file_pathes]   
+            # save hidden states
+            hidden = hidden.cpu().detach().numpy()
+            for i, relpath in enumerate(batch_file_relpathes):
+                hidden_file_path = os.path.join(hidden_dir, relpath)    # copy the dir structure: data_path -> hidden_dir
+                if not os.path.exists(os.path.dirname(hidden_file_path)):
+                    os.makedirs(os.path.dirname(hidden_file_path))
+                    print('Make dir [{}]'.format(os.path.dirname(hidden_file_path)))
+                np.save(hidden_file_path, hidden[i])
             process_bar.update(1)
 
     process_bar.close()
@@ -71,9 +63,21 @@ def unpatchify_hidden_states(
         unpatched_hidden_dir: str,
         sensor_size: tuple,
         d_hidden: int,
-):     
+):  
+    """
+    Reconstructs unpatched hidden states from patched hidden states and saves them to the specified directory.
+    Args:
+        patch_size (int): The size of each patch.
+        hidden_dir (str): The directory containing the patched hidden states.
+        unpatched_hidden_dir (str): The directory to save the unpatched hidden states.
+        sensor_size (tuple): The size of the sensor (height, width).
+        d_hidden (int): The dimension of the hidden states.
+    Returns:
+        None
+    """
+
     height, width = sensor_size
-    n_patches = height * width // patch_size ** 2
+    npatches = height * width // patch_size ** 2
     
     hidden_subdirs = []
     unpatched_hidden_subdirs = []
@@ -90,21 +94,26 @@ def unpatchify_hidden_states(
         unpatched_hidden_filenames = defaultdict(list)
 
         for hidden_filename in hidden_filenames:
+            # get the raw file name (prefix) of the hidden state
+            # hidden_filename = data_filename
+            # data_filename = "{}_{}_{}.npy".format(os.path.splitext(os.path.basename(raw_file_path))[0], idx_patch, idx_slice)
             prefix = "_".join(hidden_filename.split("_")[:-2])
-            unpatched_hidden_filenames[prefix].append(hidden_filename)
+            # group hidden states by their raw file name (prefix)
+            unpatched_hidden_filenames[prefix].append(hidden_filename)  
         
         for prefix, filenames in unpatched_hidden_filenames.items():
-            unpatched_hidden = np.zeros((n_patches, d_hidden))
-            for i in range(n_patches):
-                filename = prefix + f"_{i}_0.npy"
+            unpatched_hidden = np.zeros((npatches, d_hidden))   # unpatched hidden states, shape: (npatches, d_hidden)
+            for idx_patch in range(npatches):
+                filename = prefix + f"_{idx_patch}_0.npy"
                 if filename in filenames:
-                    file_path = os.path.join(hidden_subdir, filename)
-                    hidden = np.load(file_path)
-                    unpatched_hidden[i] = hidden
+                    hidden_file_path = os.path.join(hidden_subdir, filename)
+                    hidden = np.load(hidden_file_path)
+                    unpatched_hidden[idx_patch] = hidden
             
-            save_path = os.path.join(unpatched_hidden_subdir, prefix).replace('.npz', '.npy') 
-            np.save(save_path, unpatched_hidden)
-            print(f"Save unpatched hidden states to [{save_path}]")
+            # save unpatched hidden states
+            unpatched_hidden_path = os.path.join(unpatched_hidden_subdir, prefix)
+            np.save(unpatched_hidden_path, unpatched_hidden)
+            print(f"Save unpatched hidden states to [{unpatched_hidden_path}]")
 
 
 
@@ -115,60 +124,65 @@ def train_one_epoch(
         data_loader: DataLoader,
 ):
     model.train()
-    nsamples_per_epoch = len(data_loader.dataset)
-    nsteps_per_epoch = len(data_loader)
-    epoch_total_loss = 0
-
-    # progress bar
-    process_bar = tqdm.tqdm(total=nsteps_per_epoch)
-
-    # train one step
+    nsamples = len(data_loader.dataset)
+    nsteps = len(data_loader)
+    total_loss = 0
     correct = 0
+
+    # process bar
+    process_bar = tqdm.tqdm(total=nsteps)
+
+    # train
     for data, label in data_loader:
-        input = data.float().cuda(non_blocking=True)
-        target = label.cuda(non_blocking=True)
+        # preprocess data
+        input = data.cuda(non_blocking=True).float()
+        target = label.cuda(non_blocking=True).long()
         # forward
         output = model(input)
         # loss
         loss = loss_fn(output, target)
         # acc
-        pred = output.argmax(dim=1)
+        pred = output.argmax(dim=1) 
         correct += pred.eq(target).sum().item()
         # backward
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        # update process bar
         process_bar.set_description('loss: {:.5e}'.format(loss.item()))
-        process_bar.update(1)   
-        epoch_total_loss += loss.item() * data.size(0)
+        process_bar.update(1) 
+        # update total loss  
+        total_loss += loss.item() * data.size(0)
 
     process_bar.close()
-    acc = correct / nsamples_per_epoch
-    print('Train average loss: {:.5e}, accuracy: {:.5f}'.format(epoch_total_loss / nsamples_per_epoch, acc))
+    print('Train average loss: {:.5e}, accuracy: {:.5f}'.format(total_loss / nsamples, correct / nsamples))
 
 
 def validate(
     model: nn.Module,
     data_loader: DataLoader,
 ):
-    # validate
     model.eval()
-    nsamples_per_epoch = len(data_loader.dataset)
+    nsamples = len(data_loader.dataset)
     correct = 0
-
+    
+    # validate
     with torch.no_grad():
         for data, label in data_loader:
-            input = data.float().cuda(non_blocking=True)
-            targets = label.cuda(non_blocking=True)
+            # preprocess data
+            input = data.cuda(non_blocking=True).float()
+            targets = label.cuda(non_blocking=True).long()
             # forward
             output = model(input)
             # acc
             pred = output.argmax(dim=1)
             correct += pred.eq(targets).sum().item()
-        
-    acc = correct / nsamples_per_epoch
-    print('Validation accuracy: {:.5f}'.format(acc))
+
+    print('Validation accuracy: {:.5f}'.format(correct / nsamples))
+
+    acc = correct / nsamples
+    return acc
 
 
 def transfer(
@@ -185,10 +199,13 @@ def transfer(
     batch_size: int,
     shuffle: bool,
 ):  
+    # get dataset
     dataset = data_loader.dataset
-    
+    relpath = os.path.relpath(data_loader.dataset.data_path, data_loader.dataset.root)
+
     # hidden dir
-    hidden_dir = os.path.join(output_dir, 'hidden', data_loader.dataset.relative_data_path)
+    # output_dir/hidden can be seen as root dir of dataset
+    hidden_dir = os.path.join(output_dir, 'hidden', relpath)
     if not os.path.exists(hidden_dir):
         os.makedirs(hidden_dir)
         print('Make dir [{}]'.format(hidden_dir))
@@ -201,7 +218,7 @@ def transfer(
 
     # unpatchify hidden states
     sensor_size = dataset.get_sensor_size()
-    unpatched_hidden_dir = os.path.join(output_dir, 'unpatched_hidden', data_loader.dataset.relative_data_path)
+    unpatched_hidden_dir = os.path.join(output_dir, 'unpatched_hidden', relpath)
     if not os.path.exists(unpatched_hidden_dir):
         os.makedirs(unpatched_hidden_dir)
         print('Make dir [{}]'.format(unpatched_hidden_dir))

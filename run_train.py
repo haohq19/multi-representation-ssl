@@ -9,7 +9,7 @@ import time
 from pprint import pprint
 from utils.data import get_data_loader
 from modeling_pretrain import PretrainModel
-from modeling_transfer import TransferModel
+from modeling_train import TransferModel
 from engine_for_transfer import transfer
 from utils.data import DVS128Gesture
 

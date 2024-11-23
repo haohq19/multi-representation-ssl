@@ -5,11 +5,28 @@ from multiprocessing import Pool
 from typing import Union, List
 from torch.utils.data import Dataset, DataLoader, random_split
 
-# Data format
+
+# ############################################################################################################
+# Data format:
 # raw event: np.ndarray, shape=(n_events, 4), dtype=np.int64, columns=(timestamp, x, y, polarity)
 # event frame: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative)
 # time surface: np.ndarray, shape=(2, height, width), dtype=np.float32, channels=(positive, negative)
 # sensor size / frame size / time surface size: tuple, (height, width)
+# ############################################################################################################
+# directory structure of the dataset:
+# root
+# ├── events_np
+# ├── patch_size_count_stride(_inverse)
+# │   ├── data_path (e.g. train/test/..)
+# │   │   ├── subdir0
+# │   │   │   ├── data_file_path: {raw_file_name}_{patch_idx}_{slice_idx}.npy
+# │   │   │   ├── ...
+# │   │   ├── subdir1
+# │   │   ├── ...
+# │   ├── ...
+# ├── ...
+# ############################################################################################################
+
 
 def patchify_raw_events(events: np.ndarray, patch_size: int, sensor_size: tuple)-> List[np.ndarray]:
     """
@@ -276,7 +293,11 @@ def process_raw_events(args):
         for idx_slice, event_slice in enumerate(slices):
             save_path = os.path.join(
                 data_subdir,
-                "{}_{}_{}.npy".format(os.path.basename(raw_file_path), idx_patch, idx_slice)
+                "{}_{}_{}.npy".format(
+                    os.path.splitext(os.path.basename(raw_file_path))[0],
+                    idx_patch, 
+                    idx_slice
+                )
             )
             np.save(save_path, event_slice)
     print("Processed: [{}]".format(raw_file_path))
@@ -301,14 +322,12 @@ class DVS128Gesture(Dataset):
         patch_size (int): Size of the patches to be extracted from the raw event data.
         sensor_size (tuple): Size of the sensor (128, 128).
         data_path (str): Path to the processed data.
-        relative_data_path (str): Relative path to the processed data from the root directory.
         data_subdirs (list): List of subdirectories in the data path.
-        data_files (list): List of data files.
-        labels (list): List of labels corresponding to the data files.
-        data_ids (list): List of data IDs. Use data ID to retrieve the original data file and label.
+        data_file_pathes (list): List of paths to the data files.
+        labels (list): List of labels.
     Methods:
         __len__(): Returns the number of samples in the dataset.
-        __getitem__(idx): Returns the data and its ID. 
+        __getitem__(idx): Returns the data and its index.
         get_sensor_size(): Returns the size of the sensor.
         generate_data(): Generates the data by processing raw event data.
         load_file(file_path): Loads event data from a file.
@@ -328,32 +347,26 @@ class DVS128Gesture(Dataset):
             "train" if train else "test"
         )
 
-        self.relative_data_path = os.path.relpath(self.data_path, root)
-
         if not os.path.exists(self.data_path):
             os.makedirs(self.data_path)
             print(f"Make dir: [{self.data_path}]")
             self.generate_data()
         
         self.data_subdirs = [os.path.join(self.data_path, dir) for dir in os.listdir(self.data_path)]
-        self.data_files = []
+        self.data_file_pathes = []
         self.labels = []
-        self.data_ids = []
-        data_id = 0
+        
         for idx, data_subdir in enumerate(self.data_subdirs):
-            for file in os.listdir(data_subdir):
-                self.data_files.append(os.path.join(data_subdir, file))
+            for filename in os.listdir(data_subdir):
+                self.data_file_pathes.append(os.path.join(data_subdir, filename))
                 self.labels.append(idx)
-                self.data_ids.append(data_id)
-                data_id += 1
-    
+
     def __len__(self):
-        return len(self.data_files)
+        return len(self.data_file_pathes)
     
     def __getitem__(self, idx):
-        data = np.load(self.data_files[idx], allow_pickle=False)
-        data_id = self.data_ids[idx]
-        return data, data_id
+        data = np.load(self.data_file_pathes[idx], allow_pickle=False)
+        return data, idx
     
     @staticmethod
     def get_sensor_size():
@@ -458,14 +471,48 @@ def get_data_loader(config):
     return train_loader, val_loader, test_loader
 
 
-if __name__ == '__main__':
-    dataset = DVS128Gesture(root='/home/haohq/datasets/DVS128Gesture', train=True, count=2048, stride=0, patch_size=32, inverse=True)
-    loader = DataLoader(dataset, batch_size=1, shuffle=False, pin_memory=True)
-    for data, data_id in loader:
-        for sample in data:
-            if sample.shape != (2048, 4):
-                print(sample.shape)
-                print(data_id)
-                print(sample)
-            
-# /home/haohq/datasets/DVS128Gesture/patch32_count2048_stride0_inverse/train/1/user23_fluorescent_led_0.npz_13_0.npy
+class HiddenStateDataset(Dataset):
+    """
+    A custom PyTorch Dataset class for loading unpatched hidden state data.
+    Args:
+        root (str): The root directory of data files.
+    Attributes:
+        root (str): The root directory of data files.
+        data_files (list): A list of paths to unpatched hidden state data files.
+        labels (list): A list of labels.
+    Methods:
+        __len__(): Returns the total number of data files.
+        __getitem__(idx): Returns the data and label at the specified index.
+    """
+    def __init__(self, root):
+        self.root = root
+        self.data_files = []
+        self.labels = []
+
+        # Collect list of data files and labels
+        data_subdirs = [os.path.join(self.root, dir) for dir in os.listdir(self.root)]
+        for idx, data_subdir in enumerate(data_subdirs):
+            for file in os.listdir(data_subdir):
+                self.data_files.append(os.path.join(data_subdir, file))
+                self.labels.append(idx)
+    
+    def __len__(self):
+        return len(self.data_files)
+    
+    def __getitem__(self, idx):
+        data = np.load(self.data_files[idx], allow_pickle=False)
+        label = self.labels[idx]
+        return data, label
+
+
+def get_hidden_state_loader(config):
+    root = config['root']
+    batch_size = config['batch_size']
+    shuffle = config['shuffle']
+    num_workers = config['num_workers']
+
+    dataset = HiddenStateDataset(root)
+    train_loader, val_loader = split_dataset(dataset, config['train_split'])
+    test_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    return train_loader, val_loader, test_loader

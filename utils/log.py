@@ -2,7 +2,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 
 
-def visualize_frame_in_tb(frame: torch.Tensor, epoch: int, tb_writer: SummaryWriter, tag: str, max_out=64):
+def visualize_frame_in_tb(frame: torch.Tensor, epoch: int, tb_writer: SummaryWriter, tag: str, max_visualizations: int = None):
     """
     Visualize the event frame in tensorboard
     Args:
@@ -10,10 +10,12 @@ def visualize_frame_in_tb(frame: torch.Tensor, epoch: int, tb_writer: SummaryWri
         epoch: int, the current epoch
         tb_writer: SummaryWriter
         tag: str, tensorboard tag
-        max_out: int, the maximum number of frames to visualize
+        max_visualizations: int, the maximum number of samples to visualize
     """
-    batch_size, n_channels, height, width = frame.shape
-    max_outs = min(max_out, batch_size)
-    frame = frame[:max_outs]
-    for chan in range(n_channels):
+    batch_size, nchans, _, _ = frame.shape
+    if max_visualizations is None:
+        max_visualizations = batch_size
+    max_visualizations = min(max_visualizations, batch_size)
+    frame = frame[:max_visualizations]
+    for chan in range(nchans):
         tb_writer.add_images(tag=tag + f'_{chan}', img_tensor=frame[:, chan].unsqueeze(1), global_step=epoch + 1, dataformats='NCHW')
