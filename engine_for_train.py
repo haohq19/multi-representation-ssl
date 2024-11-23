@@ -185,7 +185,8 @@ def validate(
     return acc
 
 
-def transfer(
+
+def train(
     pretrain_model: nn.Module,
     data_loader: DataLoader,
     input_len: int,

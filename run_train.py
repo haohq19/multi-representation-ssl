@@ -7,10 +7,10 @@ import torch
 import yaml
 import time
 from pprint import pprint
-from utils.data import get_data_loader
+from utils.data import get_data_loader_for_pretraining
 from modeling_pretrain import PretrainModel
 from modeling_train import TransferModel
-from engine_for_transfer import transfer
+from engine_for_train import train
 from utils.data import DVS128Gesture
 
 def init_seed(seed):

@@ -1,3 +1,2 @@
 name: "event_tokenizer"
-d_embed: 64
-patch_size: 32
+d_embed: 256

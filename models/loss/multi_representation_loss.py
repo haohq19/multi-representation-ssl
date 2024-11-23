@@ -1,10 +1,8 @@
 import torch.nn as nn
 
 class MultiRepresentationLoss(nn.Module):
-    def __init__(self, config):
+    def __init__(self, loss_fn_name):
         super().__init__()
-        self.config = config
-        loss_fn_name = config['loss_fn']
         if loss_fn_name == 'l1':
             self.loss_fn = nn.L1Loss()
         elif loss_fn_name == 'l2':

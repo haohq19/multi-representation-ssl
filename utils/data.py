@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from multiprocessing import Pool
 from typing import Union, List
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, DistributedSampler
 
 
 # ############################################################################################################
@@ -445,30 +445,55 @@ def split_dataset(dataset, train_split):
     return train_dataset, val_dataset
 
 
-def get_data_loader(config):
-
-    dataset_name = config['dataset']
-    root = config['root']
-    count = config['count']
-    stride = config['stride']
-    patch_size = config['patch_size']
-
+def get_data_loader_for_pretraining(
+    dataset_name: str, 
+    root: str,
+    patch_size: int, 
+    count: int, 
+    stride: int,
+    inverse: bool, 
+    batch_size: int, 
+    shuffle: bool, 
+    num_workers: int, 
+    train_split: float,
+    val_split: float,
+    dist: bool,
+):  
+    """
+    Get data loaders for pretraining.
+    Args:
+        dataset_name (str): Name of the dataset.
+        root (str): Root directory of the dataset.
+        patch_size (int): Size of the patches.
+        count (int): Number of events in each slice.
+        stride (int): Stride for slicing events.
+        inverse (bool): If True, the slices are taken from the end of the event sequence.
+        batch_size (int): Number of samples in each batch.
+        shuffle (bool): If True, shuffle the data.
+        num_workers (int): Number of workers for data loading.
+        train_split (float): Ratio of training set.
+        val_split (float): Ratio of validation set, only used to split training set, validation set and test set.
+        dist (bool): If True, use DDP.
+    Returns:
+        train_loader (DataLoader): DataLoader for training set.
+        val_loader (DataLoader): DataLoader for validation set.
+    """
     if dataset_name == 'dvs128gesture':
-        train_dataset = DVS128Gesture(root=root, train=True, count=count, stride=stride, patch_size=patch_size)
-        test_dataset = DVS128Gesture(root=root, train=False, count=count, stride=stride, patch_size=patch_size)
-        train_dataset, val_dataset = split_dataset(train_dataset, config['train_split'])
+        train_dataset = DVS128Gesture(root=root, train=True, count=count, stride=stride, patch_size=patch_size, inverse=inverse)
+        train_dataset, val_dataset = split_dataset(train_dataset, train_split=train_split)
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
     
-    batch_size = config['batch_size']
-    shuffle = config['shuffle']
-    num_workers = config['num_workers']
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-
-    return train_loader, val_loader, test_loader
+    if dist:
+        train_sampler = DistributedSampler(train_dataset, shuffle=shuffle)
+        val_sampler = DistributedSampler(val_dataset, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, num_workers=num_workers)
+        return train_loader, val_loader
+    else:
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        return train_loader, val_loader
 
 
 class HiddenStateDataset(Dataset):

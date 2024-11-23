@@ -2,10 +2,10 @@ import torch.nn as nn
 from .temporal_embedding import SinusoidalEmbedding
 
 class EventTokenizer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, patch_size, d_embed):
         super().__init__()
-        self.patch_size = config['patch_size']
-        self.d_embed = config['d_embed']
+        self.patch_size = patch_size
+        self.d_embed = d_embed
         self.vocab_size = 2 * self.patch_size * self.patch_size
         
 

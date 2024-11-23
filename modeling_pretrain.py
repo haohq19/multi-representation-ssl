@@ -4,34 +4,57 @@ from models.event_tokenizer.event_tokenizer import EventTokenizer
 
 class PretrainModel(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, cfg):
         super().__init__()
-        config_tokenizer = config['tokenizer']
-        config_model = config['model']
-        self.tokenizer_name = config_tokenizer['name']
-        self.model_name = config_model['name']  
+        cfg_tok = cfg['tokenizer']
+        cfg_enc = cfg['encoder']
+        self.tokenizer_name = cfg_tok['name']
+        self.encoder_name = cfg_enc['name']
 
         if self.tokenizer_name == 'event_tokenizer':
-            self.tokenizer = EventTokenizer(config_tokenizer)
+            patch_size = cfg['patch_size']
+            d_embed = cfg_tok['d_embed']
+            self.tokenizer = EventTokenizer(
+                patch_size=patch_size,
+                d_embed=d_embed,
+            )
         else:
             raise ValueError(f"Unsupported tokenizer name: {self.tokenizer_name}")
         
-        if self.model_name == 'rwkv4':
-            self.model = RWKV4(config_model)
+        if self.encoder_name == 'rwkv4':
+            d_model = cfg_enc['d_model']
+            depth = cfg_enc['depth']
+            d_ffn = cfg_enc['d_ffn']
+            patch_size = cfg['patch_size']
+            use_frame_target = cfg['use_frame_target']
+            use_next_frame_target = cfg['use_next_frame_target']
+            use_ts_target = cfg['use_ts_target']
+            ntargets = use_frame_target + use_next_frame_target + use_ts_target
+            num_classes = ntargets * 2 * patch_size * patch_size
+            cfg_enc['num_classes'] = num_classes
+            self.encoder = RWKV4(
+                d_model=d_model,
+                depth=depth,
+                d_ffn=d_ffn,
+                num_classes=num_classes,
+            )
         else:
-            raise ValueError(f"Unsupported model name: {self.model_name}")
+            raise ValueError(f"Unsupported encoder name: {self.encoder_name}")
         
         self.num_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     def forward(self, input, return_hidden=False):
-        # input.shape = [batch_size, n_events, 4]
+        # input.shape = [batch_size, nevents, 4]
         # output.shape = [batch_size, num_classes]
 
-        x = self.tokenizer(input)   # [batch_size, n_events, d_model]
+        x = self.tokenizer(input)   # [batch_size, nevents, d_model]
 
         if return_hidden:
-            output, hidden = self.model(x, return_hidden=True)
-            return output, hidden   # output.shape = [batch_size, num_classes], hidden.shape = [batch_size, depth * d_model]
+            output, hidden = self.encoder(x, return_hidden=True)
+            # output.shape = [batch_size, num_classes]
+            # hidden.shape = [batch_size, d_hidden = depth * d_model]
+            return output, hidden   
         
-        output = self.model(x)      # [batch_size, num_classes]
+        output = self.encoder(x)      
+        # output.shape = [batch_size, num_classes]
         return output

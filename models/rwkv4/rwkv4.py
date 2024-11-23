@@ -5,12 +5,12 @@ from .rwkv4_layer import RWKV4Layer
 
 class RWKV4(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, d_model: int, depth: int, d_ffn: int, num_classes: int):
         super().__init__()
-        self.d_model = config['d_model']
-        self.depth = config['depth']
-        self.d_ffn = config['d_ffn']
-        self.num_classes = config['num_classes']
+        self.d_model = d_model
+        self.depth = depth
+        self.d_ffn = d_ffn
+        self.num_classes = num_classes
 
         # backbone
         self.layers = nn.ModuleList([RWKV4Layer(

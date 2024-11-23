@@ -1,3 +1,4 @@
+# data
 dataset: "dvs128gesture"
 root: "datasets/DVS128Gesture"
 patch_size: 32
@@ -5,25 +6,37 @@ count: 4096
 stride: 4096
 inverse: False
 train_split: 0.8
+val_split: 0.1
 shuffle: True
 num_workers: 16
+
+# models
+encoder: "rwkv5"
 tokenizer: "event_tokenizer"
-model: "rwkv4"
-batch_size: 128
+
+# training
 device_id: 0
+batch_size: 16
 nepochs: 100
 lr: 0.001
-output_dir: "outputs/pretrain_rwkv4"
+output_dir: "outputs/pretrain"
 save_freq: 1
 resume: False
 optimizer: "adam"
-loss_fn: "l2"
-pred_frame: True
-pred_ts: False
-pred_next_frame: True
-tau: 0.1
 input_len: 2048
-rep_len: 256
+repr_len: 256
+
+# loss
+loss_fn: "l2"
+use_frame_target: True
+use_next_frame_target: True
+use_ts_target: False
+ts_tau: 0.1
+
+# dist
 dist_url: "env://"
 backend: "gloo"
+
+# random
 seed: 2024
+
