@@ -237,7 +237,7 @@ def train(
     tb_writer = None
     if is_master():
         tb_writer = SummaryWriter(os.path.join(output_dir, 'tensorboard'))
-        print('Save tensorboard logs to [{}]'.format(output_dir + '/tensorboard'))
+        print('Save tensorboard logs to [{}]'.format(os.path.join(output_dir, 'tensorboard')))
     
     epoch = epoch
     while(epoch < nepochs):

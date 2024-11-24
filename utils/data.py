@@ -511,21 +511,21 @@ class HiddenStateDataset(Dataset):
     """
     def __init__(self, root):
         self.root = root
-        self.data_files = []
+        self.data_file_pathes = []
         self.labels = []
 
         # Collect list of data files and labels
         data_subdirs = [os.path.join(self.root, dir) for dir in os.listdir(self.root)]
         for idx, data_subdir in enumerate(data_subdirs):
             for file in os.listdir(data_subdir):
-                self.data_files.append(os.path.join(data_subdir, file))
+                self.data_file_pathes.append(os.path.join(data_subdir, file))
                 self.labels.append(idx)
     
     def __len__(self):
-        return len(self.data_files)
+        return len(self.data_file_pathes)
     
     def __getitem__(self, idx):
-        data = np.load(self.data_files[idx], allow_pickle=False)
+        data = np.load(self.data_file_pathes[idx], allow_pickle=False)
         label = self.labels[idx]
         return data, label
 
@@ -556,19 +556,28 @@ def get_data_loader_list_for_caching_hidden_states(
     return data_loaders
     
 
-def get_hidden_state_loader_list(
+def get_data_loader_for_training(
     dataset_name: str,
     root: str,
+    train_split: float,
+    val_split: float,
     batch_size: int,
+    shuffle: bool,
     num_workers: int,
 ):
-    root = config['root']
-    batch_size = config['batch_size']
-    shuffle = config['shuffle']
-    num_workers = config['num_workers']
 
-    dataset = HiddenStateDataset(root)
-    train_loader, val_loader = split_dataset(dataset, config['train_split'])
-    test_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    if dataset_name == 'dvs128gesture':
+        train_path = os.path.join(root, "train")
+        test_path = os.path.join(root, "test")
+        train_dataset = HiddenStateDataset(train_path)
+        test_dataset = HiddenStateDataset(test_path)
+        train_dataset, val_dataset = split_dataset(train_dataset, train_split=train_split)
+
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader, test_loader

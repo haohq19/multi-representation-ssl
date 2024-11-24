@@ -8,10 +8,10 @@ import torch.utils
 import yaml
 import time
 from pprint import pprint
-from utils.data import get_data_loader_list_for_caching_hidden_states
+from utils.data import get_data_loader_list_for_caching_hidden_states, get_data_loader_for_training
 from modeling_pretrain import PretrainModel
 from modeling_train import TrainModel
-from engine_for_train import cache_hidden_states, unpatchify_hidden_states, train
+from engine_for_train import cache_hidden_states, unpatchify_hidden_states, train, test
 from utils.data import DVS128Gesture
 
 
@@ -82,7 +82,7 @@ def main(cfg):
     device_id = cfg['device_id']
     torch.cuda.set_device(device_id)
     
-    # cache hidden states
+    # pretrain data loaders
     cfg_pretrain = cfg['pretrain']
     
     dataset_name = cfg_pretrain['dataset']
@@ -92,6 +92,7 @@ def main(cfg):
     batch_size = cfg_pretrain['batch_size']
     num_workers = cfg_pretrain['num_workers']
     
+    # data loaders
     data_loaders = get_data_loader_list_for_caching_hidden_states(
         dataset_name=dataset_name,
         root=root,
@@ -123,26 +124,24 @@ def main(cfg):
     state_dict = checkpoint['model']
     pretrain_model.load_state_dict(state_dict)
     pretrain_model.cuda()
-    
-    # cache hidden states
-    input_len = cfg_pretrain['input_len']
-    
+ 
+    # for each dataset, cache hidden states and unpatchify hidden states   
     for data_loader in data_loaders:
         # get dataset
         dataset = data_loader.dataset
         if isinstance(dataset, torch.utils.data.Subset):
             raise ValueError(f"Unsupported dataset: Subset")
-        
-        # relpath to root
-        relpath = os.path.relpath(data_loader.dataset.data_path, data_loader.dataset.root)
+        # relpath
+        relpath = os.path.relpath(dataset.data_path, dataset.root)
 
+        # cache hidden states
         # hidden dir
         hidden_dir = os.path.join(
             output_dir,
             'hidden',
             relpath
         )
-        # cache hidden states
+        input_len = cfg_pretrain['input_len']
         if not os.path.exists(hidden_dir):
             os.makedirs(hidden_dir)
             print('Make dir [{}]'.format(hidden_dir))
@@ -153,13 +152,12 @@ def main(cfg):
                 hidden_dir=hidden_dir,
             )
 
-        # unpatchify hidden dir
+        # unpatchify hidden states
         unpatched_hidden_dir = os.path.join(
             output_dir, 
             'unpatched_hidden', 
             relpath
         )
-        # unpatchify hidden states
         sensor_size = dataset.get_sensor_size()
         d_hidden = cfg_pretrain['d_hidden']
         if not os.path.exists(unpatched_hidden_dir):
@@ -174,9 +172,22 @@ def main(cfg):
             )
             
     # data
-    
-    dataset_name = cfg['dataset']
-    root = cfg['root']
+    dataset_name = cfg_pretrain['dataset']
+    root = os.path.join(output_dir, 'unpatched_hidden', f'patch{patch_size}_count{count}_stride0_inverse') 
+    train_split = cfg['train_split']
+    val_split = cfg['val_split']
+    batch_size = cfg['batch_size']
+    shuffle = cfg['shuffle']
+    num_workers = cfg['num_workers']
+    train_loader, val_loader, test_loader = get_data_loader_for_training(
+        dataset_name=dataset_name,
+        root=root,
+        train_split=train_split,
+        val_split=val_split,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+    )
     
 
     # model, optimizer
@@ -190,6 +201,7 @@ def main(cfg):
     # training  
     loss_fn = torch.nn.CrossEntropyLoss()
     nepochs = cfg['nepochs']
+    save_freq = cfg['save_freq']
     
     # model to device
     model.cuda()
@@ -199,16 +211,22 @@ def main(cfg):
         yaml.dump(cfg, f)
     pprint(cfg)
     
-    train(
+    best_model = train(
         model=model,
+        loss_fn=loss_fn,
+        optimizer=optimizer,
         train_loader=train_loader,
         val_loader=val_loader,
-        optimizer=optimizer,
-        loss_fn=loss_fn,
-        data_loaders=data_loaders,
         nepochs=nepochs,
         output_dir=output_dir,
+        save_freq=save_freq,
     )
+
+    test(
+        model=best_model, 
+        data_loader=test_loader, 
+        output_dir=output_dir
+        )
 
 if __name__ == '__main__':
     cfg_path = "configs"
@@ -222,6 +240,6 @@ if __name__ == '__main__':
 
 
 ''''
-python run_pretrain_rwkv4.py    
-torchrun --nproc_per_node=4 run_pretrain_rwkv4.py
+python run_train.py    
+torchrun --nproc_per_node=4 run_train.py
 '''

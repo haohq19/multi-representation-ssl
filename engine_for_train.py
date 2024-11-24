@@ -4,8 +4,8 @@ import tqdm
 import torch
 import torch.nn as nn
 from collections import defaultdict
-from utils.data import HiddenStateDataset
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 def cache_hidden_states(
         model: nn.Module,
@@ -122,6 +122,8 @@ def train_one_epoch(
         loss_fn: nn.Module,
         optimizer: torch.optim.Optimizer,
         data_loader: DataLoader,
+        epoch: int,
+        tb_writer: SummaryWriter,
 ):
     model.train()
     nsamples = len(data_loader.dataset)
@@ -133,7 +135,7 @@ def train_one_epoch(
     process_bar = tqdm.tqdm(total=nsteps)
 
     # train
-    for data, label in data_loader:
+    for step, (data, label) in enumerate(data_loader):
         # preprocess data
         input = data.cuda(non_blocking=True).float()
         target = label.cuda(non_blocking=True).long()
@@ -151,17 +153,23 @@ def train_one_epoch(
 
         # update process bar
         process_bar.set_description('loss: {:.5e}'.format(loss.item()))
-        process_bar.update(1) 
+        process_bar.update(1)
+        # update tensorboard
+        tb_writer.add_scalar(tag='step/loss', scalar_value=loss.item(), global_step=epoch * nsteps + step)
         # update total loss  
         total_loss += loss.item() * data.size(0)
 
     process_bar.close()
+    tb_writer.add_scalar(tag='train/loss', scalar_value=total_loss / nsamples, global_step=epoch + 1)
+    tb_writer.add_scalar(tag='train/acc', scalar_value=correct / nsamples, global_step=epoch + 1)
     print('Train average loss: {:.5e}, accuracy: {:.5f}'.format(total_loss / nsamples, correct / nsamples))
 
 
 def validate(
     model: nn.Module,
     data_loader: DataLoader,
+    tb_writer: SummaryWriter,
+    epoch: int,
 ):
     model.eval()
     nsamples = len(data_loader.dataset)
@@ -179,43 +187,100 @@ def validate(
             pred = output.argmax(dim=1)
             correct += pred.eq(targets).sum().item()
 
+    tb_writer.add_scalar(tag='val/acc', scalar_value=correct / nsamples, global_step=epoch + 1)
     print('Validation accuracy: {:.5f}'.format(correct / nsamples))
-
-    acc = correct / nsamples
-    return acc
+    return correct / nsamples
 
 
 
 def train(
     model: nn.Module,
+    loss_fn: nn.Module,
+    optimizer: torch.optim.Optimizer,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    loss_fn: nn.Module,
     nepochs: int,
     output_dir: str,
+    save_freq: int,
 ):  
+
+    # log
+    tb_writer = SummaryWriter(log_dir=os.path.join(output_dir, 'tensorboard'))
+    print('Tensorboard log dir: [{}]'.format(os.path.join(output_dir, 'tensorboard')))
 
     # train
     epoch = 0
+    best_model = None
+    best_acc = 0
+    best_epoch = 0
+
     while(epoch < nepochs):
         print('Epoch [{}/{}]'.format(epoch + 1, nepochs))
+
+        # train
         train_one_epoch(
             model=model,
             loss_fn=loss_fn,
             optimizer=optimizer,
             data_loader=train_loader,
         )
-        validate(
+
+        val_acc = validate(
             model=model,
             data_loader=val_loader,
         )
         
+        # save best model
+        if val_acc > best_acc:
+            best_acc = val_acc
+            best_model = model
+            best_epoch = epoch
+
         epoch += 1
 
-    # save model
-    torch.save(model.state_dict(), os.path.join(output_dir, "checkpoints", 'ckpt_{}.pth'.format(epoch)))
-    print('Save model to [{}]'.format(os.path.join(output_dir, "checkpoints", 'ckpt_{}.pth'.format(epoch))))
+        # save checkpoint
+        if epoch % save_freq == 0:
+            checkpoint = {
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'epoch': epoch,
+            }
+            checkpoint_name = 'ckpt_{}.pth'.format(epoch)
+            torch.save(checkpoint, os.path.join(output_dir, 'checkpoints', checkpoint_name))
+            print('Save checkpoint to [{}]'.format(os.path.join(output_dir, 'checkpoints', checkpoint_name)))
+    
+    # save best model
+    checkpoint = {
+        'model': best_model.state_dict(),
+        'epoch': best_epoch,
+    }
+    checkpoint_name = 'best_model.pth'
+    torch.save(checkpoint, os.path.join(output_dir, checkpoint_name))
+    print('Save best model to [{}]'.format(os.path.join(output_dir, checkpoint_name)))
+
+    return best_model
+
+def test(
+    model: nn.Module,
+    data_loader: DataLoader,
+):
+    model.eval()
+    nsamples = len(data_loader.dataset)
+    correct = 0
+    
+    # test
+    with torch.no_grad():
+        for data, label in data_loader:
+            # preprocess data
+            input = data.cuda(non_blocking=True).float()
+            targets = label.cuda(non_blocking=True).long()
+            # forward
+            output = model(input)
+            # acc
+            pred = output.argmax(dim=1)
+            correct += pred.eq(targets).sum().item()
+
+    print('Test accuracy: {:.5f}'.format(correct / nsamples))
     
 
 
