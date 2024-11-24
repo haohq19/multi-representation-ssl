@@ -1,0 +1,8 @@
+name: 'vit'
+npatches: 16
+d_model: 256
+depth: 4
+nheads: 4
+num_classes: 11
+drop_rate: 0.1
+attn_drop_rate: 0.1

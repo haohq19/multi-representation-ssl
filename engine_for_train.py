@@ -24,11 +24,6 @@ def cache_hidden_states(
         None
     """
     model.eval()
-    nsteps = len(data_loader)
-
-    # progress bar
-    process_bar = tqdm.tqdm(total=nsteps)
-
     with torch.no_grad():
         for data, indices in data_loader:
             data = data.cuda(non_blocking=True)
@@ -36,25 +31,27 @@ def cache_hidden_states(
             input = data[:, :input_len].float()
             # forward
             _, hidden = model(input, return_hidden=True)
+            # hidden, indices: cuda -> cpu -> numpy
+            hidden = hidden.detach().cpu().numpy()
+            indices = indices.cpu().numpy()
             # get the path to the data files in the batch 
-            indices = indices.cpu().numpy().long()
-            batch_file_pathes = [data_loader.dataset.data_file_pathes[idx] for idx in indices]  # absolute path of data files in the batch
-            # absolute path -> relative path 
+            batch_file_pathes = [data_loader.dataset.data_file_pathes[idx] for idx in indices]
+            # absolute path -> relative path
             # data_path is the data directory containing all subdirs of data files
-            # one subdir contains data files of one label
+            # one subdir contains data files of one kind of label
             # relpath havs the format of 'subdirname/filename'
             batch_file_relpathes = [os.path.relpath(file_path, data_loader.dataset.data_path) for file_path in batch_file_pathes]   
+            # create subdirs for hidden states
+            for relpath in batch_file_relpathes:
+                dirname = os.path.dirname(relpath)
+                if not os.path.exists(os.path.join(hidden_dir, dirname)):
+                    os.makedirs(os.path.join(hidden_dir, dirname))
+                    print('Make dir [{}]'.format(os.path.join(hidden_dir, dirname)))
             # save hidden states
-            hidden = hidden.cpu().detach().numpy()
+            
             for i, relpath in enumerate(batch_file_relpathes):
-                hidden_file_path = os.path.join(hidden_dir, relpath)    # copy the dir structure: data_path -> hidden_dir
-                if not os.path.exists(os.path.dirname(hidden_file_path)):
-                    os.makedirs(os.path.dirname(hidden_file_path))
-                    print('Make dir [{}]'.format(os.path.dirname(hidden_file_path)))
+                hidden_file_path = os.path.join(hidden_dir, relpath)    # copy the dir structure: data_path -> hidden_dir)
                 np.save(hidden_file_path, hidden[i])
-            process_bar.update(1)
-
-    process_bar.close()
 
 
 def unpatchify_hidden_states(
@@ -223,11 +220,15 @@ def train(
             loss_fn=loss_fn,
             optimizer=optimizer,
             data_loader=train_loader,
+            epoch=epoch,
+            tb_writer=tb_writer,
         )
 
         val_acc = validate(
             model=model,
             data_loader=val_loader,
+            tb_writer=tb_writer,
+            epoch=epoch,
         )
         
         # save best model

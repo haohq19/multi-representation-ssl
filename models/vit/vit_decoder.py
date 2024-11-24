@@ -6,7 +6,7 @@ class ViTDecoder(nn.Module):
     def __init__(
         self,
         in_chans: int,
-        n_patches: int,
+        npatches: int,
         d_model: int,
         depth: int,
         nheads: int,
@@ -18,7 +18,7 @@ class ViTDecoder(nn.Module):
 
 
         self.in_chans = in_chans
-        self.n_patches = n_patches
+        self.npatches = npatches
         self.d_model = d_model
         self.depth = depth
         self.num_heads = nheads
@@ -29,7 +29,7 @@ class ViTDecoder(nn.Module):
         self.norm_layer = nn.LayerNorm
         
         self.embedding = nn.Linear(in_chans, d_model)
-        self.pos_embed = get_sinusoid_encoding_table(n_patches, d_model).cuda()
+        self.pos_embed = get_sinusoid_encoding_table(npatches, d_model).cuda()
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
         self.blocks = nn.ModuleList([
             Block(d_model=d_model, num_heads=nheads, drop=drop_rate, attn_drop=attn_drop_rate, norm_layer=self.norm_layer)

@@ -1,7 +1,6 @@
 import os
 import argparse
 import random
-import glob
 import numpy as np
 import torch
 import torch.utils
@@ -12,8 +11,6 @@ from utils.data import get_data_loader_list_for_caching_hidden_states, get_data_
 from modeling_pretrain import PretrainModel
 from modeling_train import TrainModel
 from engine_for_train import cache_hidden_states, unpatchify_hidden_states, train, test
-from utils.data import DVS128Gesture
-
 
 
 def load_config(cfg_path):
@@ -34,7 +31,7 @@ def load_model_config(cfg_path, cfg):
         print(f'Load decoder config [{decoder}]')
 
 def load_pretrain_config(cfg):
-    checkpoint_path = cfg['checkpoint_path']
+    checkpoint_path = cfg['checkpoint']
     if not os.path.exists(checkpoint_path):
         raise ValueError(f"Checkpoint not found: {checkpoint_path}")
     pretrain_cfg_path = os.path.dirname(checkpoint_path).replace('checkpoints', 'config.yaml')
@@ -105,7 +102,7 @@ def main(cfg):
     # output_dir
     output_dir = cfg['output_dir']
     dataset_name = cfg_pretrain['dataset']
-    decoder_name = cfg['decoder']
+    decoder_name = cfg['decoder']['name']
     output_dir = get_output_dir(output_dir=output_dir, model_name=decoder_name, dataset=dataset_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -119,7 +116,7 @@ def main(cfg):
     print('Number of parameters of PTM: {} M'.format(pretrain_model.num_params/1e6))
     
     # load checkpoint
-    checkpoint_path = cfg['checkpoint_path']
+    checkpoint_path = cfg['checkpoint']
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     state_dict = checkpoint['model']
     pretrain_model.load_state_dict(state_dict)
@@ -195,7 +192,10 @@ def main(cfg):
     print('Number of parameters of TM: {} M'.format(model.num_params/1e6))
     params = filter(lambda p: p.requires_grad, model.parameters())
     lr = cfg['lr']
-    optimizer = torch.optim.Adam(params=params, lr=lr)
+    if cfg['optimizer'] == 'adam':
+        optimizer = torch.optim.Adam(params=params, lr=lr)
+    else:
+        raise ValueError(f"Unsupported optimizer: {cfg['optimizer']}")
     
 
     # training  

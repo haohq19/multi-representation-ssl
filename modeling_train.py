@@ -12,14 +12,23 @@ class TrainModel(nn.Module):
         if self.dec_name == 'vit':
             
             in_chans = cfg_pretrain['d_hidden']
-            n_patches = cfg_dec['n_patches']
+            npatches = cfg_dec['npatches']
             d_model = cfg_dec['d_model']
             depth = cfg_dec['depth']
             nheads = cfg_dec['nheads']
             num_classes = cfg_dec['num_classes']
             drop_rate = cfg_dec['drop_rate']
             attn_drop_rate = cfg_dec['attn_drop_rate']
-            self.decoder = ViTDecoder(cfg_dec)
+            self.decoder = ViTDecoder(
+                in_chans=in_chans,
+                npatches=npatches,
+                d_model=d_model,
+                depth=depth,
+                nheads=nheads,
+                num_classes=num_classes,
+                drop_rate=drop_rate,
+                attn_drop_rate=attn_drop_rate,
+            )
         else:
             raise ValueError(f"Unsupported decoder name: {self.dec_name}")
         

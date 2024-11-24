@@ -2,7 +2,7 @@
 dataset: "dvs128gesture"
 root: "datasets/DVS128Gesture"
 patch_size: 32
-count: 4096
+count: 2048
 stride: 4096
 inverse: False
 train_split: 0.8
@@ -24,7 +24,7 @@ save_freq: 1
 resume: False
 optimizer: "adam"
 input_len: 2048
-repr_len: 256
+repr_len: 128
 
 # loss
 loss_fn: "l2"
